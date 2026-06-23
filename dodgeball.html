@@ -44,6 +44,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 @keyframes pulse{from{transform:scale(1)}to{transform:scale(1.12)}}
 .act-row{display:flex;gap:8px}
 #ball-status{position:fixed;bottom:180px;right:20px;color:#fff;font-size:13px;background:rgba(0,0,0,.5);padding:6px 12px;border-radius:6px;pointer-events:none;z-index:10}
+#hit-counter{position:fixed;bottom:220px;left:20px;color:#fff;font-size:14px;font-weight:bold;background:rgba(0,0,0,.5);padding:6px 14px;border-radius:6px;pointer-events:none;z-index:10;display:none}
 #menu{position:fixed;inset:0;background:linear-gradient(135deg,#1a1a3e,#2d1b4e);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
 #menu h1{font-size:48px;margin-bottom:8px;text-shadow:0 0 30px rgba(255,100,50,.5)}
 #menu p{font-size:15px;opacity:.7;margin-bottom:30px}
@@ -124,6 +125,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 </div>
 
 <div id="ball-status"></div>
+<div id="hit-counter">命中: 0</div>
 
 <canvas id="minimap"></canvas>
 
@@ -747,6 +749,7 @@ class Ball {
         if (p.isHuman) {
           game.showMsg('外野へ移動！', '#f80');
         } else if (thrower.isHuman) {
+          game.hitCount++;
           triggerHitEffect(this.pos.clone());
         }
         this.drop(this.pos);
@@ -1044,6 +1047,7 @@ const game = {
   catchAttempt: false,
   countdownTimer: 0,
   gameTime: 0,
+  hitCount: 0,
   ballMilestones: [90, 180],
   GAME_LIMIT: 270,
   mode: 'solo',
@@ -1131,6 +1135,7 @@ const game = {
     document.getElementById('result').style.display = 'none';
     document.getElementById('choice-modal').classList.remove('show');
     this.paused = false;
+    this.hitCount = 0;
 
     players.forEach(p => { if (p.mesh.parent) scene.remove(p.mesh); });
     balls.forEach(b => { scene.remove(b.mesh); scene.remove(b.trail); });
@@ -1172,6 +1177,7 @@ const game = {
     document.getElementById('result').style.display = 'none';
     document.getElementById('choice-modal').classList.remove('show');
     this.paused = false;
+    this.hitCount = 0;
     this.mySlot = mySlot;
 
     players.forEach(p => { if (p.mesh.parent) scene.remove(p.mesh); });
@@ -1549,6 +1555,10 @@ const game = {
       if (humanPlayer.ball) { bs.textContent = 'ボール所持中！投げよう！'; bs.style.background = 'rgba(0,150,0,.6)'; }
       else { bs.textContent = 'ボールなし'; bs.style.background = 'rgba(0,0,0,.4)'; }
     } else { bs.textContent = ''; bs.style.display = 'none'; }
+
+    const hc = document.getElementById('hit-counter');
+    hc.style.display = 'block';
+    hc.textContent = `命中: ${this.hitCount}`;
   },
 
   updateMinimap() {

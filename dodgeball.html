@@ -1,0 +1,2024 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,maximum-scale=1.0">
+<title>ドッジボール 3D</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans-serif;touch-action:none;user-select:none;-webkit-user-select:none}
+#c{display:block;width:100vw;height:100vh}
+#hud{position:fixed;top:0;left:0;right:0;display:flex;justify-content:space-between;padding:10px 20px;pointer-events:none;z-index:10}
+.team-score{padding:8px 18px;border-radius:8px;font-size:16px;font-weight:bold;color:#fff;text-shadow:1px 1px 3px rgba(0,0,0,.7);line-height:1.4}
+.team-a{background:rgba(30,100,220,.85)}
+.team-b{background:rgba(220,40,40,.85)}
+#crosshair{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);width:30px;height:30px;pointer-events:none;z-index:10}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:rgba(255,255,255,.8)}
+#crosshair::before{top:0;left:50%;transform:translateX(-50%);width:2px;height:100%}
+#crosshair::after{top:50%;left:0;transform:translateY(-50%);width:100%;height:2px}
+#catch-indicator{position:fixed;top:50%;left:50%;transform:translate(-50%,-50%);pointer-events:none;z-index:15;text-align:center;display:none}
+#catch-ring{width:120px;height:120px;border:4px solid transparent;border-radius:50%;margin:0 auto 8px;transition:border-color .1s}
+#catch-text{color:#fff;font-size:14px;font-weight:bold;text-shadow:0 0 8px rgba(0,0,0,.9)}
+#catch-indicator.active{display:block}
+#catch-indicator.perfect #catch-ring{border-color:#0f0;box-shadow:0 0 20px rgba(0,255,0,.5)}
+#catch-indicator.early #catch-ring{border-color:#ff0;box-shadow:0 0 15px rgba(255,255,0,.3)}
+#catch-indicator.far #catch-ring{border-color:#f80;box-shadow:0 0 10px rgba(255,136,0,.2)}
+#controls{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-end;padding:15px;pointer-events:none;z-index:10}
+.ctrl-group{pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:4px}
+.dpad{display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,52px);gap:3px}
+.dpad-btn{background:rgba(255,255,255,.18);border:2px solid rgba(255,255,255,.3);border-radius:10px;color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
+.dpad-btn:active,.dpad-btn.pressed{background:rgba(255,255,255,.45)}
+.dpad-btn.empty{background:transparent;border:none}
+.action-btns{display:flex;flex-direction:column;gap:8px;align-items:flex-end}
+.act-btn{width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,255,255,.4);color:#fff;font-size:11px;font-weight:bold;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;text-align:center;line-height:1.2}
+.act-btn:active,.act-btn.pressed{transform:scale(.92)}
+#btn-jump{background:rgba(0,200,100,.35)}
+#btn-jump:active,#btn-jump.pressed{background:rgba(0,200,100,.65)}
+#btn-crouch{background:rgba(200,150,0,.35)}
+#btn-crouch:active,#btn-crouch.pressed{background:rgba(200,150,0,.65)}
+#btn-throw{background:rgba(220,60,60,.35)}
+#btn-throw:active,#btn-throw.pressed{background:rgba(220,60,60,.65)}
+#btn-catch{background:rgba(60,60,220,.35);transition:all .15s}
+#btn-catch:active,#btn-catch.pressed{background:rgba(60,60,220,.65)}
+#btn-catch.glow{background:rgba(0,220,0,.55);border-color:#0f0;box-shadow:0 0 15px rgba(0,255,0,.5);animation:pulse .4s infinite alternate}
+@keyframes pulse{from{transform:scale(1)}to{transform:scale(1.12)}}
+.act-row{display:flex;gap:8px}
+#ball-status{position:fixed;bottom:180px;right:20px;color:#fff;font-size:13px;background:rgba(0,0,0,.5);padding:6px 12px;border-radius:6px;pointer-events:none;z-index:10}
+#menu{position:fixed;inset:0;background:linear-gradient(135deg,#1a1a3e,#2d1b4e);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#menu h1{font-size:48px;margin-bottom:8px;text-shadow:0 0 30px rgba(255,100,50,.5)}
+#menu p{font-size:15px;opacity:.7;margin-bottom:30px}
+#start-btn{padding:18px 50px;font-size:22px;font-weight:bold;background:linear-gradient(135deg,#e74c3c,#c0392b);color:#fff;border:none;border-radius:12px;cursor:pointer;transition:transform .2s}
+#start-btn:hover{transform:scale(1.05)}
+#result{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#result h2{font-size:48px;margin-bottom:20px}
+#result p{font-size:20px;margin-bottom:30px;opacity:.8}
+#retry-btn{padding:15px 40px;font-size:18px;font-weight:bold;background:linear-gradient(135deg,#3498db,#2980b9);color:#fff;border:none;border-radius:10px;cursor:pointer}
+#msg{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:64px;font-weight:bold;text-shadow:0 0 20px rgba(0,0,0,.8);pointer-events:none;z-index:20;display:none;text-align:center}
+#minimap{position:fixed;top:60px;right:15px;width:140px;height:140px;background:rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.3);border-radius:6px;z-index:10;pointer-events:none}
+#look-area{position:fixed;top:0;left:80px;right:80px;bottom:200px;z-index:5}
+#choice-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:90;flex-direction:column}
+#choice-modal.show{display:flex}
+#choice-modal .choice-box{background:rgba(20,20,50,.95);border:2px solid rgba(255,255,255,.3);border-radius:16px;padding:30px 40px;text-align:center;color:#fff}
+#choice-modal h3{font-size:24px;margin-bottom:10px;color:#0f0}
+#choice-modal p{font-size:15px;margin-bottom:20px;opacity:.8}
+#choice-modal .choice-btns{display:flex;gap:15px;justify-content:center}
+#choice-modal button{padding:12px 28px;font-size:16px;font-weight:bold;border:none;border-radius:10px;cursor:pointer;color:#fff}
+#btn-return{background:linear-gradient(135deg,#27ae60,#1e8449)}
+#btn-stay{background:linear-gradient(135deg,#8e44ad,#6c3483)}
+#pos-label{position:fixed;top:66px;left:50%;transform:translateX(-50%);color:#fff;font-size:13px;padding:4px 14px;border-radius:12px;pointer-events:none;z-index:10;font-weight:bold}
+#timer{position:fixed;top:8px;left:50%;transform:translateX(-50%);color:#fff;font-size:15px;font-weight:bold;background:rgba(0,0,0,.45);padding:4px 14px;border-radius:10px;pointer-events:none;z-index:11;letter-spacing:1px;min-width:60px;text-align:center}
+#hit-flash{position:fixed;inset:0;pointer-events:none;z-index:30;opacity:0;background:radial-gradient(ellipse at center,transparent 30%,rgba(255,120,0,.55) 100%);transition:opacity .06s}
+#hit-flash.active{opacity:1}
+#hit-text{position:fixed;top:38%;left:50%;transform:translate(-50%,-50%) scale(0);pointer-events:none;z-index:31;font-size:80px;font-weight:900;color:#ff6600;text-shadow:0 0 30px rgba(255,100,0,.9),0 0 8px #fff;letter-spacing:4px;transition:none;white-space:nowrap}
+@keyframes hitPop{0%{transform:translate(-50%,-50%) scale(0);opacity:1}40%{transform:translate(-50%,-50%) scale(1.25);opacity:1}70%{transform:translate(-50%,-50%) scale(1);opacity:1}100%{transform:translate(-50%,-50%) scale(1.1);opacity:0}}
+#mode-select{display:flex;gap:20px;margin-bottom:20px}
+.mode-btn{padding:20px 36px;font-size:20px;font-weight:bold;border:none;border-radius:12px;cursor:pointer;color:#fff;transition:transform .2s}
+.mode-btn:hover{transform:scale(1.05)}
+.mode-solo{background:linear-gradient(135deg,#3498db,#2980b9)}
+.mode-multi{background:linear-gradient(135deg,#e74c3c,#c0392b)}
+#mp-menu{position:fixed;inset:0;background:linear-gradient(135deg,#1a1a3e,#2d1b4e);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#mp-menu h2{font-size:36px;margin-bottom:20px;text-shadow:0 0 20px rgba(255,60,60,.4)}
+.mp-input{padding:12px 20px;font-size:24px;border:2px solid rgba(255,255,255,.3);border-radius:10px;background:rgba(255,255,255,.1);color:#fff;text-align:center;width:200px;margin:10px;letter-spacing:6px;font-weight:bold}
+.mp-input::placeholder{color:rgba(255,255,255,.3);letter-spacing:2px;font-size:16px}
+.mp-btn{padding:14px 30px;font-size:18px;font-weight:bold;border:none;border-radius:10px;cursor:pointer;color:#fff;margin:8px;transition:transform .2s}
+.mp-btn:hover{transform:scale(1.05)}
+.mp-btn-create{background:linear-gradient(135deg,#27ae60,#1e8449)}
+.mp-btn-join{background:linear-gradient(135deg,#2980b9,#1a5276)}
+.mp-btn-back{background:rgba(255,255,255,.15);margin-top:20px}
+.mp-or{margin:15px 0;opacity:.5;font-size:14px}
+.mp-error{color:#f44;font-size:14px;margin:10px 0;min-height:20px}
+#lobby{position:fixed;inset:0;background:linear-gradient(135deg,#1a1a3e,#2d1b4e);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#lobby h2{font-size:32px;margin-bottom:5px}
+.room-key-label{font-size:14px;opacity:.6;margin-top:10px}
+.room-key-display{font-size:52px;font-weight:bold;color:#ff0;letter-spacing:10px;margin:5px 0 15px;text-shadow:0 0 20px rgba(255,255,0,.3)}
+#player-list{display:flex;gap:20px;margin:15px 0;max-width:500px;width:90%}
+.team-list{flex:1;background:rgba(255,255,255,.05);border-radius:10px;padding:12px}
+.team-list h3{text-align:center;margin-bottom:8px;font-size:15px}
+.team-list.blue h3{color:#4488ff}
+.team-list.red h3{color:#ff4444}
+.player-entry{padding:3px 8px;font-size:13px;border-radius:4px;margin:2px 0}
+.player-entry.me{color:#0f0;font-weight:bold}
+.player-entry.remote{color:#fff;opacity:.8}
+.player-entry.ai{color:#888;opacity:.4;font-style:italic}
+#lobby-status{font-size:14px;opacity:.6;margin:8px 0}
+.mp-btn-start{background:linear-gradient(135deg,#e74c3c,#c0392b);font-size:22px;padding:16px 40px;margin-top:10px}
+#conn-status{position:fixed;top:4px;right:10px;color:#fff;font-size:11px;padding:3px 10px;border-radius:8px;pointer-events:none;z-index:112;display:none;background:rgba(0,0,0,.6)}
+</style>
+</head>
+<body>
+
+<canvas id="c"></canvas>
+
+<div id="hud">
+  <div class="team-score team-a" id="score-a">BLUE 内:10 外:0</div>
+  <div class="team-score team-b" id="score-b">RED 内:10 外:0</div>
+</div>
+
+<div id="timer">0:00</div>
+<div id="pos-label"></div>
+<div id="crosshair"></div>
+
+<div id="catch-indicator">
+  <div id="catch-ring"></div>
+  <div id="catch-text">CATCH!</div>
+</div>
+
+<div id="ball-status"></div>
+
+<canvas id="minimap"></canvas>
+
+<div id="controls">
+  <div class="ctrl-group">
+    <div class="dpad">
+      <div class="dpad-btn empty"></div>
+      <div class="dpad-btn" id="btn-up">▲</div>
+      <div class="dpad-btn empty"></div>
+      <div class="dpad-btn" id="btn-left">◀</div>
+      <div class="dpad-btn empty"></div>
+      <div class="dpad-btn" id="btn-right">▶</div>
+      <div class="dpad-btn empty"></div>
+      <div class="dpad-btn" id="btn-down">▼</div>
+      <div class="dpad-btn empty"></div>
+    </div>
+  </div>
+  <div class="ctrl-group">
+    <div class="action-btns">
+      <div class="act-row">
+        <div class="act-btn" id="btn-jump">JUMP</div>
+        <div class="act-btn" id="btn-throw">THROW</div>
+      </div>
+      <div class="act-row">
+        <div class="act-btn" id="btn-crouch">DUCK</div>
+        <div class="act-btn" id="btn-catch">CATCH</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="look-area"></div>
+
+<div id="menu">
+  <h1>DODGEBALL 3D</h1>
+  <p>一人称視点ドッジボール ─ 10 vs 10（外野あり）</p>
+  <div id="mode-select">
+    <button class="mode-btn mode-solo" id="btn-solo">ひとりでプレイ</button>
+    <button class="mode-btn mode-multi" id="btn-multi">みんなでプレイ</button>
+  </div>
+  <p style="font-size:12px;opacity:.5">WASD移動 / マウスで視点 / Spaceジャンプ / Shiftしゃがみ / クリック投げ / Eキャッチ</p>
+</div>
+
+<div id="mp-menu">
+  <h2>オンライン対戦</h2>
+  <button class="mp-btn mp-btn-create" id="btn-create-room">ルームを作成</button>
+  <p class="mp-or">─ または ─</p>
+  <input class="mp-input" id="room-key-input" placeholder="キー入力" maxlength="4" type="text" inputmode="numeric">
+  <br>
+  <button class="mp-btn mp-btn-join" id="btn-join-room">ルームに参加</button>
+  <div class="mp-error" id="mp-error"></div>
+  <button class="mp-btn mp-btn-back" id="btn-mp-back">戻る</button>
+</div>
+
+<div id="lobby">
+  <h2>ロビー</h2>
+  <p class="room-key-label">ルームキー</p>
+  <div class="room-key-display" id="lobby-room-key">----</div>
+  <div id="player-list">
+    <div class="team-list blue"><h3>BLUE TEAM</h3><div id="blue-players"></div></div>
+    <div class="team-list red"><h3>RED TEAM</h3><div id="red-players"></div></div>
+  </div>
+  <div id="lobby-status">プレイヤーを待っています...</div>
+  <button class="mp-btn mp-btn-start" id="btn-start-mp" style="display:none">ゲーム開始</button>
+  <button class="mp-btn mp-btn-back" id="btn-lobby-back">退出</button>
+</div>
+
+<div id="conn-status"></div>
+
+<div id="result">
+  <h2 id="result-title"></h2>
+  <p id="result-desc"></p>
+  <button id="retry-btn">RETRY</button>
+</div>
+
+<div id="choice-modal">
+  <div class="choice-box">
+    <h3>ヒット成功！</h3>
+    <p>内野に戻りますか？外野に残りますか？</p>
+    <div class="choice-btns">
+      <button id="btn-return">内野に戻る</button>
+      <button id="btn-stay">外野に残る</button>
+    </div>
+  </div>
+</div>
+
+<div id="msg"></div>
+<div id="hit-flash"></div>
+<div id="hit-text">HIT!</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+'use strict';
+
+const CFG = {
+  COURT_L: 28, COURT_W: 14, OUTFIELD_D: 8,
+  PLAYER_H: 1.7, CROUCH_H: 0.9, PLAYER_R: 0.3,
+  EYE_H: 1.55, CROUCH_EYE: 0.75,
+  BALL_R: 0.14, BALL_COUNT: 1, TEAM_SIZE: 10,
+  MOVE_SPD: 5.5, THROW_SPD: 22, JUMP_V: 7.5, GRAVITY: -18,
+  CATCH_PERFECT: [0.5, 7.0],
+  CATCH_OK: [7.0, 9.0],
+  AI_THROW_DELAY: [0.3, 0.9],
+  AI_DODGE_CHANCE: 0.6,
+  AI_CATCH_CHANCE: 0.25,
+  AI_ACCURACY: 0.7,
+  AI_RETURN_CHANCE: 0.7
+};
+const TOTAL_L = CFG.COURT_L + CFG.OUTFIELD_D * 2;
+const TOTAL_W = CFG.COURT_W + CFG.OUTFIELD_D * 2;
+
+const canvas = document.getElementById('c');
+const renderer = new THREE.WebGLRenderer({canvas, antialias: true});
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+
+const scene = new THREE.Scene();
+scene.background = new THREE.Color(0x1a1a2e);
+scene.fog = new THREE.FogExp2(0x1a1a2e, 0.012);
+
+const camera = new THREE.PerspectiveCamera(78, window.innerWidth/window.innerHeight, 0.1, 140);
+const clock = new THREE.Clock();
+
+scene.add(new THREE.AmbientLight(0xffffff, 0.5));
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(8, 18, 5);
+dirLight.castShadow = true;
+dirLight.shadow.mapSize.set(1024, 1024);
+dirLight.shadow.camera.left = -25; dirLight.shadow.camera.right = 25;
+dirLight.shadow.camera.top = 25; dirLight.shadow.camera.bottom = -25;
+scene.add(dirLight);
+scene.add(new THREE.PointLight(0x4488ff, 0.3, 30).translateX(-6).translateY(8));
+scene.add(new THREE.PointLight(0xff4444, 0.3, 30).translateX(6).translateY(8));
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+/* ── Court ── */
+const courtMeshes = [];
+function buildCourt() {
+  courtMeshes.forEach(m => scene.remove(m));
+  courtMeshes.length = 0;
+  const hL = CFG.COURT_L / 2, hW = CFG.COURT_W / 2, oD = CFG.OUTFIELD_D;
+  const add = m => { scene.add(m); courtMeshes.push(m); return m; };
+
+  // Main court floor
+  const floorMat = new THREE.MeshStandardMaterial({color: 0xCD8C3C, roughness: 0.8});
+  const floor = add(new THREE.Mesh(new THREE.PlaneGeometry(CFG.COURT_W, CFG.COURT_L), floorMat));
+  floor.rotation.x = -Math.PI/2; floor.receiveShadow = true;
+
+  // Outfield floors (darker) — 後ろ+左右+角（全部つながったU字）
+  const outMat = new THREE.MeshStandardMaterial({color: 0x7A5A25, roughness: 0.9});
+  const addOut = (x, z, w, d) => {
+    const m = add(new THREE.Mesh(new THREE.PlaneGeometry(w, d), outMat.clone()));
+    m.rotation.x = -Math.PI/2; m.position.set(x, 0, z); m.receiveShadow = true;
+  };
+  // 後ろ外野（上下）— TOTAL_W幅で角まで一枚
+  addOut(0, -(hL + oD/2), TOTAL_W, oD);
+  addOut(0,  (hL + oD/2), TOTAL_W, oD);
+  // 左右サイド外野（コートの長さ分）
+  addOut(-(hW + oD/2),  hL/2, oD, hL);   // 左・REDサイド
+  addOut( (hW + oD/2),  hL/2, oD, hL);   // 右・REDサイド
+  addOut(-(hW + oD/2), -hL/2, oD, hL);   // 左・BLUEサイド
+  addOut( (hW + oD/2), -hL/2, oD, hL);   // 右・BLUEサイド
+
+  // Lines
+  const lineMat = new THREE.MeshBasicMaterial({color: 0xffffff});
+  function makeLine(x, z, w, d) {
+    const m = add(new THREE.Mesh(new THREE.PlaneGeometry(w, d), lineMat));
+    m.rotation.x = -Math.PI/2; m.position.set(x, 0.01, z);
+  }
+  makeLine(0, 0, TOTAL_W, 0.1);                    // センターライン（左右まで延長）
+  makeLine(0,  hL, TOTAL_W, 0.1);                  // 内野端ライン
+  makeLine(0, -hL, TOTAL_W, 0.1);
+  makeLine(0,  hL+oD, CFG.COURT_W, 0.08);          // 後ろ外野 遠端
+  makeLine(0, -(hL+oD), CFG.COURT_W, 0.08);
+  makeLine( hW, 0, 0.08, CFG.COURT_L);             // 内野サイドライン
+  makeLine(-hW, 0, 0.08, CFG.COURT_L);
+  makeLine( hW+oD, 0, 0.08, CFG.COURT_L);          // 外野サイド遠端
+  makeLine(-hW-oD, 0, 0.08, CFG.COURT_L);
+
+  // Walls — 角まで囲む四面
+  const wallH = 5;
+  const wallMat = new THREE.MeshStandardMaterial({color: 0x2a2a4a, transparent: true, opacity: 0.2});
+  for (const zz of [-(hL+oD)-0.1, hL+oD+0.1]) {
+    const w = add(new THREE.Mesh(new THREE.PlaneGeometry(TOTAL_W, wallH), wallMat));
+    w.position.set(0, wallH/2, zz);
+    if (zz < 0) w.rotation.y = Math.PI;
+  }
+  for (const xx of [-(hW+oD)-0.1, (hW+oD)+0.1]) {
+    const w = add(new THREE.Mesh(new THREE.PlaneGeometry(TOTAL_L, wallH), wallMat));
+    w.position.set(xx, wallH/2, 0);
+    w.rotation.y = xx < 0 ? Math.PI/2 : -Math.PI/2;
+  }
+
+  // Ceiling
+  const ceil = add(new THREE.Mesh(
+    new THREE.PlaneGeometry(TOTAL_W + 2, TOTAL_L + 2),
+    new THREE.MeshStandardMaterial({color: 0x1a1a2e, side: THREE.DoubleSide})
+  ));
+  ceil.position.y = 7; ceil.rotation.x = Math.PI/2;
+
+  // Lights
+  for (let i = -3; i <= 3; i++) {
+    const pl = new THREE.PointLight(0xffffcc, 0.25, 15);
+    pl.position.set(0, 6.5, i * 5);
+    add(pl);
+    const bulb = add(new THREE.Mesh(
+      new THREE.SphereGeometry(0.12, 8, 8),
+      new THREE.MeshBasicMaterial({color: 0xffffcc})
+    ));
+    bulb.position.copy(pl.position);
+  }
+}
+
+/* ── Player ── */
+const TEAM_BLUE = 0, TEAM_RED = 1;
+const players = [];
+const balls = [];
+
+class Player {
+  constructor(id, team, isHuman) {
+    this.id = id;
+    this.team = team;
+    this.isHuman = isHuman;
+    this.pos = new THREE.Vector3();
+    this.vel = new THREE.Vector3();
+    this.yaw = team === TEAM_BLUE ? Math.PI : 0;
+    this.pitch = 0;
+    this.height = CFG.PLAYER_H;
+    this.eyeH = CFG.EYE_H;
+    this.crouching = false;
+    this.jumping = false;
+    this.grounded = true;
+    this.alive = true;
+    this.inField = true; // true=内野, false=外野
+    this.ball = null;
+    this.throwCooldown = 0;
+    this.mesh = null;
+    this.aiState = 'idle';
+    this.aiTimer = Math.random() * 2;
+    this.aiTarget = new THREE.Vector3();
+    this.aiDodgeDir = 0;
+    this.targetBall = null;
+    this.catchImmunity = 0;
+    this.hitFlash = 0;
+    this.catchAttempt = false;
+    this.isRemote = false;
+    this.buildMesh();
+  }
+
+  buildMesh() {
+    this.mesh = new THREE.Group();
+    const teamColor = this.team === TEAM_BLUE ? 0x2266dd : 0xdd3322;
+
+    const bodyGeo = new THREE.CylinderGeometry(0.22, 0.28, 0.9, 8);
+    this.bodyMat = new THREE.MeshStandardMaterial({color: teamColor});
+    const body = new THREE.Mesh(bodyGeo, this.bodyMat);
+    body.position.y = 0.7; body.castShadow = true;
+    this.mesh.add(body);
+    this.bodyMesh = body;
+
+    const headGeo = new THREE.SphereGeometry(0.16, 8, 8);
+    const head = new THREE.Mesh(headGeo, new THREE.MeshStandardMaterial({color: 0xFFD5A0}));
+    head.position.y = 1.32; head.castShadow = true;
+    this.mesh.add(head);
+    this.headMesh = head;
+
+    const legGeo = new THREE.CylinderGeometry(0.08, 0.08, 0.5, 6);
+    const legMat = new THREE.MeshStandardMaterial({color: 0x333355});
+    this.legL = new THREE.Mesh(legGeo, legMat); this.legL.position.set(-0.1, 0.25, 0);
+    this.legR = new THREE.Mesh(legGeo, legMat); this.legR.position.set(0.1, 0.25, 0);
+    this.mesh.add(this.legL, this.legR);
+
+    const nc = document.createElement('canvas'); nc.width = 64; nc.height = 64;
+    const ctx = nc.getContext('2d');
+    ctx.fillStyle = this.team === TEAM_BLUE ? '#1144aa' : '#aa1111';
+    ctx.fillRect(0, 0, 64, 64);
+    ctx.fillStyle = '#fff'; ctx.font = 'bold 40px sans-serif';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(String(this.id % CFG.TEAM_SIZE + 1), 32, 32);
+    const backNum = new THREE.Mesh(
+      new THREE.PlaneGeometry(0.3, 0.3),
+      new THREE.MeshBasicMaterial({map: new THREE.CanvasTexture(nc)})
+    );
+    backNum.position.set(0, 0.85, -0.23); backNum.rotation.y = Math.PI;
+    this.mesh.add(backNum);
+
+    if (!this.isHuman) scene.add(this.mesh);
+  }
+
+  getBounds() {
+    const hW = CFG.COURT_W / 2 - 0.3;
+    const hL = CFG.COURT_L / 2;
+    const oD = CFG.OUTFIELD_D - 0.3;
+    if (this.inField) {
+      return this.team === TEAM_BLUE
+        ? {xMin:-hW, xMax:hW, zMin:-hL+0.3, zMax:-0.15}
+        : {xMin:-hW, xMax:hW, zMin:0.15,    zMax:hL-0.3};
+    }
+    // 外野: U字全体を一つの外周ボックスとして扱う（角も含む）
+    return this.team === TEAM_BLUE
+      ? {xMin:-hW-oD, xMax:hW+oD, zMin:0.2,     zMax:hL+oD}
+      : {xMin:-hW-oD, xMax:hW+oD, zMin:-hL-oD,  zMax:-0.2};
+  }
+
+  setStartPos(idx) {
+    const side = this.team === TEAM_BLUE ? -1 : 1;
+    const order = [2, 1, 3, 0, 4]; // center first
+    const row = Math.floor(idx / 5);
+    const col = order[idx % 5];
+    this.pos.set((col - 2) * 2.5, 0, side * (2.5 + row * 3));
+    this.yaw = this.team === TEAM_BLUE ? Math.PI : 0;
+  }
+
+  update(dt) {
+    if (!this.alive) return;
+    this.vel.y += CFG.GRAVITY * dt;
+    this.pos.add(this.vel.clone().multiplyScalar(dt));
+    if (this.pos.y < 0) { this.pos.y = 0; this.vel.y = 0; this.grounded = true; this.jumping = false; }
+
+    const b = this.getBounds();
+    this.pos.x = THREE.MathUtils.clamp(this.pos.x, b.xMin, b.xMax);
+    this.pos.z = THREE.MathUtils.clamp(this.pos.z, b.zMin, b.zMax);
+
+    // 外野プレイヤーが敵内野（コート中央）に入り込まないよう押し出す
+    if (!this.inField) {
+      const hW = CFG.COURT_W / 2, hL = CFG.COURT_L / 2;
+      if (Math.abs(this.pos.x) < hW) {
+        if (this.team === TEAM_BLUE && this.pos.z < hL) {
+          // 最近の境界へ押し出す
+          const dSide = Math.min(this.pos.x + hW, hW - this.pos.x);
+          const dZ    = Math.min(this.pos.z, hL - this.pos.z);
+          if (dSide < dZ) this.pos.x = this.pos.x < 0 ? -hW - 0.1 : hW + 0.1;
+          else if (this.pos.z < hL * 0.5) this.pos.z = 0.2;
+          else this.pos.z = hL;
+        } else if (this.team === TEAM_RED && this.pos.z > -hL) {
+          const dSide = Math.min(this.pos.x + hW, hW - this.pos.x);
+          const dZ    = Math.min(-this.pos.z, hL + this.pos.z);
+          if (dSide < dZ) this.pos.x = this.pos.x < 0 ? -hW - 0.1 : hW + 0.1;
+          else if (this.pos.z > -hL * 0.5) this.pos.z = -0.2;
+          else this.pos.z = -hL;
+        }
+      }
+    }
+
+    if (this.crouching) {
+      this.height = THREE.MathUtils.lerp(this.height, CFG.CROUCH_H, dt * 10);
+      this.eyeH = THREE.MathUtils.lerp(this.eyeH, CFG.CROUCH_EYE, dt * 10);
+    } else {
+      this.height = THREE.MathUtils.lerp(this.height, CFG.PLAYER_H, dt * 10);
+      this.eyeH = THREE.MathUtils.lerp(this.eyeH, CFG.EYE_H, dt * 10);
+    }
+    if (this.throwCooldown > 0) this.throwCooldown -= dt;
+    if (this.catchImmunity > 0) this.catchImmunity -= dt;
+    if (this.hitFlash > 0) this.hitFlash -= dt;
+
+    this.mesh.position.set(this.pos.x, this.pos.y, this.pos.z);
+    this.mesh.rotation.y = -this.yaw + Math.PI;
+
+    if (this.crouching) {
+      this.bodyMesh.scale.y = 0.6; this.bodyMesh.position.y = 0.5; this.headMesh.position.y = 0.95;
+    } else {
+      this.bodyMesh.scale.y = 1; this.bodyMesh.position.y = 0.7; this.headMesh.position.y = 1.32;
+    }
+
+    const speed = Math.sqrt(this.vel.x*this.vel.x + this.vel.z*this.vel.z);
+    if (speed > 0.5 && this.grounded) {
+      const t = performance.now() * 0.008;
+      this.legL.position.y = 0.25 + Math.sin(t) * 0.08;
+      this.legR.position.y = 0.25 + Math.sin(t + Math.PI) * 0.08;
+      this.legL.position.z = Math.sin(t) * 0.1;
+      this.legR.position.z = Math.sin(t + Math.PI) * 0.1;
+    }
+
+    if (this.hitFlash > 0) {
+      this.bodyMat.emissive.setHex(0xff0000);
+      this.bodyMat.emissiveIntensity = this.hitFlash;
+    } else {
+      this.bodyMat.emissive.setHex(0x000000);
+    }
+
+    // Outfield visual: slightly transparent
+    const targetOp = this.inField ? 1 : 0.65;
+    if (this.bodyMat.opacity !== undefined) {
+      this.bodyMat.transparent = !this.inField;
+      this.bodyMat.opacity = targetOp;
+    }
+  }
+
+  jump() {
+    if (this.grounded && !this.jumping) {
+      this.vel.y = CFG.JUMP_V; this.grounded = false; this.jumping = true;
+    }
+  }
+  setCrouch(v) { this.crouching = v; }
+
+  throwBall(dir) {
+    if (!this.ball || this.throwCooldown > 0) return;
+    const b = this.ball; this.ball = null; b.heldBy = null;
+    const lp = this.pos.clone(); lp.y += this.eyeH;
+    lp.add(dir.clone().multiplyScalar(0.5));
+    b.launch(lp, dir, this, CFG.THROW_SPD);
+    this.throwCooldown = 0.3;
+  }
+
+  pickUp(ball) {
+    if (this.ball) return;
+    this.ball = ball; ball.heldBy = this; ball.flying = false; ball.vel.set(0,0,0);
+    ball.thrownBy = null; // 古い thrownBy をリセット
+    if (this.isHuman) this.catchImmunity = 1.0; // 拾った後1秒間は他のボールに当たらない
+  }
+
+  sendToOutfield() {
+    if (this.ball) { this.ball.heldBy = null; this.ball.drop(this.pos); this.ball = null; }
+    this.inField = false;
+    this.hitFlash = 1;
+    const hW = CFG.COURT_W / 2, hL = CFG.COURT_L / 2, oD = CFG.OUTFIELD_D;
+    // 後ろ・左・右・角にランダム配置（内野は除く）
+    const zone = Math.floor(Math.random() * 3);
+    let x, z;
+    if (this.team === TEAM_BLUE) {
+      if (zone === 0) { x = (Math.random()-0.5)*(TOTAL_W-1); z = hL + 0.5 + Math.random()*(oD-1); }
+      else if (zone === 1) { x = hW + 0.4 + Math.random()*(oD-0.8); z = Math.random()*hL; }
+      else              { x = -(hW + 0.4 + Math.random()*(oD-0.8)); z = Math.random()*hL; }
+    } else {
+      if (zone === 0) { x = (Math.random()-0.5)*(TOTAL_W-1); z = -(hL + 0.5 + Math.random()*(oD-1)); }
+      else if (zone === 1) { x = hW + 0.4 + Math.random()*(oD-0.8); z = -Math.random()*hL; }
+      else              { x = -(hW + 0.4 + Math.random()*(oD-0.8)); z = -Math.random()*hL; }
+    }
+    this.pos.set(x, 0, z);
+    const tz = this.team === TEAM_BLUE ? hL/2 : -hL/2;
+    this.yaw = Math.atan2(-(0 - this.pos.x), -(tz - this.pos.z));
+    this.vel.set(0, 0, 0);
+  }
+
+  returnToInfield() {
+    this.inField = true;
+    const hL = CFG.COURT_L / 2;
+    if (this.team === TEAM_BLUE) {
+      this.pos.set((Math.random()-0.5) * (CFG.COURT_W - 2), 0, -(hL * 0.5));
+      this.yaw = Math.PI;
+    } else {
+      this.pos.set((Math.random()-0.5) * (CFG.COURT_W - 2), 0, hL * 0.5);
+      this.yaw = 0;
+    }
+    this.vel.set(0,0,0);
+  }
+
+  getForward() {
+    return new THREE.Vector3(-Math.sin(this.yaw), 0, -Math.cos(this.yaw));
+  }
+  getLookDir() {
+    return new THREE.Vector3(
+      -Math.sin(this.yaw) * Math.cos(this.pitch),
+      Math.sin(this.pitch),
+      -Math.cos(this.yaw) * Math.cos(this.pitch)
+    ).normalize();
+  }
+}
+
+/* ── Ball ── */
+class Ball {
+  constructor(id) {
+    this.id = id;
+    this.pos = new THREE.Vector3();
+    this.vel = new THREE.Vector3();
+    this.flying = false;
+    this.heldBy = null;
+    this.thrownBy = null;
+
+    const geo = new THREE.SphereGeometry(CFG.BALL_R, 12, 12);
+    this.mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({color: 0xff6622, roughness: 0.3, metalness: 0.2}));
+    this.mesh.castShadow = true;
+    scene.add(this.mesh);
+
+    const tGeo = new THREE.BufferGeometry();
+    tGeo.setAttribute('position', new THREE.BufferAttribute(new Float32Array(30*3), 3));
+    this.trail = new THREE.Line(tGeo, new THREE.LineBasicMaterial({color: 0xff8844, transparent: true, opacity: 0.4}));
+    this.trailPositions = [];
+    scene.add(this.trail);
+  }
+
+  setStart() {
+    this.pos.set(0, CFG.BALL_R, 0);
+    this.vel.set(0,0,0); this.flying = false; this.heldBy = null; this.thrownBy = null;
+  }
+
+  launch(pos, dir, thrower, speed) {
+    this.pos.copy(pos);
+    this.vel.copy(dir).multiplyScalar(speed);
+    this.vel.y += 1.5;
+    this.flying = true; this.thrownBy = thrower;
+    this.trailPositions = [];
+  }
+
+  drop(pos) {
+    this.pos.set(pos.x, CFG.BALL_R, pos.z);
+    this.vel.set(0,0,0); this.flying = false; this.thrownBy = null;
+  }
+
+  update(dt) {
+    if (this.heldBy) {
+      const p = this.heldBy, fwd = p.getForward();
+      this.pos.set(
+        p.pos.x + fwd.x*0.5 + Math.sin(p.yaw+Math.PI/2)*0.3,
+        p.pos.y + p.eyeH - 0.2,
+        p.pos.z + fwd.z*0.5 + Math.cos(p.yaw+Math.PI/2)*0.3
+      );
+      this.mesh.position.copy(this.pos);
+      this.trail.visible = false;
+      return;
+    }
+
+    if (this.flying) {
+      this.vel.y += CFG.GRAVITY * 0.4 * dt;
+      this.pos.add(this.vel.clone().multiplyScalar(dt));
+
+      this.trailPositions.push(this.pos.clone());
+      if (this.trailPositions.length > 10) this.trailPositions.shift();
+      const arr = this.trail.geometry.attributes.position.array;
+      for (let i = 0; i < 10; i++) {
+        const tp = this.trailPositions[i] || this.pos;
+        arr[i*3] = tp.x; arr[i*3+1] = tp.y; arr[i*3+2] = tp.z;
+      }
+      this.trail.geometry.attributes.position.needsUpdate = true;
+      this.trail.geometry.setDrawRange(0, Math.min(this.trailPositions.length, 10));
+      this.trail.visible = true;
+
+      const hWT = TOTAL_W / 2, hLT = TOTAL_L / 2;
+      if (Math.abs(this.pos.x) > hWT + 1 || Math.abs(this.pos.z) > hLT + 1 || this.pos.y < -1) {
+        this.outOfBounds(); return;
+      }
+
+      if (this.pos.y <= CFG.BALL_R) {
+        this.pos.y = CFG.BALL_R;
+        this.flying = false; this.vel.multiplyScalar(0.3); this.vel.y = 0;
+        this.thrownBy = null;
+      }
+
+      this.checkHitPlayers();
+    } else {
+      this.vel.multiplyScalar(0.95);
+      this.pos.add(this.vel.clone().multiplyScalar(dt));
+      this.pos.y = CFG.BALL_R;
+      this.trail.visible = false;
+
+      const hWT = TOTAL_W / 2, hLT = TOTAL_L / 2;
+      if (Math.abs(this.pos.x) > hWT) this.vel.x *= -0.5;
+      if (Math.abs(this.pos.z) > hLT) this.vel.z *= -0.5;
+      this.pos.x = THREE.MathUtils.clamp(this.pos.x, -hWT, hWT);
+      this.pos.z = THREE.MathUtils.clamp(this.pos.z, -hLT, hLT);
+    }
+
+    this.mesh.position.copy(this.pos);
+    if (this.flying) { this.mesh.rotation.x += dt*10; this.mesh.rotation.z += dt*5; }
+  }
+
+  checkHitPlayers() {
+    if (!this.thrownBy) return;
+    const thrower = this.thrownBy;
+
+    // ① 味方内野プレイヤーが外野仲間のボールをキャッチ
+    if (!thrower.inField) {
+      for (const p of players) {
+        if (!p.alive || !p.inField || p.team !== thrower.team) continue;
+        const dx = this.pos.x - p.pos.x, dz = this.pos.z - p.pos.z;
+        if (Math.sqrt(dx*dx + dz*dz) < CFG.PLAYER_R + CFG.BALL_R + 0.3 &&
+            this.pos.y > p.pos.y && this.pos.y < p.pos.y + p.height + 0.2) {
+          if ((p.isHuman || p.isRemote) && p.catchAttempt) {
+            const dist = this.pos.distanceTo(p.pos);
+            p.catchAttempt = false;
+            if (dist < CFG.CATCH_PERFECT[1] && dist > CFG.CATCH_PERFECT[0]) {
+              p.pickUp(this);
+              p.catchImmunity = 0.8;
+              game.showMsg('キャッチ！', '#0f0');
+            } else {
+              game.showMsg('キャッチ失敗...', '#f44');
+              this.drop(this.pos);
+            }
+            return;
+          } else if (!p.isHuman && !p.isRemote && Math.random() < 0.35) {
+            p.pickUp(this); return;
+          }
+        }
+      }
+    }
+
+    // ② 敵内野プレイヤーへのヒット判定
+    for (const p of players) {
+      if (!p.alive || p.team === thrower.team) continue;
+      if (!p.inField) continue;
+      if ((p.isHuman || p.isRemote) && p.catchImmunity > 0) continue;
+
+      const dx = this.pos.x - p.pos.x, dz = this.pos.z - p.pos.z;
+      const horizDist = Math.sqrt(dx*dx + dz*dz);
+
+      if (horizDist < CFG.PLAYER_R + CFG.BALL_R + 0.15 &&
+          this.pos.y > p.pos.y && this.pos.y < p.pos.y + p.height + 0.2) {
+
+        if ((p.isHuman || p.isRemote) && p.catchAttempt) {
+          const dist = this.pos.distanceTo(p.pos);
+          p.catchAttempt = false;
+          if (dist < CFG.CATCH_PERFECT[1] && dist > CFG.CATCH_PERFECT[0]) {
+            p.pickUp(this);
+            p.catchImmunity = 0.8;
+            if (thrower.inField) thrower.sendToOutfield();
+            game.showMsg('NICE CATCH!', '#0f0');
+            return;
+          } else {
+            game.showMsg('CATCH FAILED...', '#f44');
+          }
+        }
+
+        p.sendToOutfield();
+        if (p.isHuman) {
+          game.showMsg('外野へ移動！', '#f80');
+        } else if (thrower.isHuman) {
+          triggerHitEffect(this.pos.clone());
+        }
+        this.drop(this.pos);
+        if (!thrower.inField) game.onOutfieldHit(thrower);
+        return;
+      }
+    }
+  }
+
+  outOfBounds() {
+    const hWT = TOTAL_W / 2, hLT = TOTAL_L / 2;
+    this.pos.set(
+      THREE.MathUtils.clamp(this.pos.x, -hWT + 1, hWT - 1),
+      CFG.BALL_R,
+      THREE.MathUtils.clamp(this.pos.z, -hLT + 1, hLT - 1)
+    );
+    this.vel.set(0,0,0); this.flying = false; this.thrownBy = null;
+  }
+}
+
+/* ── Input ── */
+const keys = {};
+let mouseDX = 0, mouseDY = 0, pointerLocked = false;
+let touchLook = {active:false, startX:0, startY:0, id:-1};
+const btnState = {up:false, down:false, left:false, right:false};
+
+// マウスドラッグで視点移動
+let mouseDragging = false, lastMX = 0, lastMY = 0, dragMoved = false;
+
+document.addEventListener('keydown', e => { keys[e.code] = true; e.preventDefault(); });
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+document.addEventListener('pointerlockchange', () => { pointerLocked = document.pointerLockElement === canvas; });
+
+document.addEventListener('mouseup', e => {
+  if (mouseDragging && !dragMoved && e.button === 0) {
+    if ((game.state === 'playing' || game.state === 'playing_client') && !game.paused && humanPlayer && humanPlayer.alive && humanPlayer.ball) {
+      if (game.mode === 'multi' && !net.isHost) { net.sendAction('throw'); }
+      else { humanPlayer.throwBall(humanPlayer.getLookDir()); }
+    }
+  }
+  mouseDragging = false;
+});
+document.addEventListener('mousemove', e => {
+  if (pointerLocked) {
+    mouseDX += e.movementX; mouseDY += e.movementY;
+  } else if (mouseDragging) {
+    const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
+    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragMoved = true;
+    mouseDX += dx; mouseDY += dy;
+    lastMX = e.clientX; lastMY = e.clientY;
+  }
+});
+
+['btn-up','btn-down','btn-left','btn-right'].forEach(id => {
+  const el = document.getElementById(id), dir = id.replace('btn-','');
+  const dn = e => { e.preventDefault(); btnState[dir] = true; el.classList.add('pressed'); };
+  const up = e => { e.preventDefault(); btnState[dir] = false; el.classList.remove('pressed'); };
+  el.addEventListener('touchstart',dn); el.addEventListener('mousedown',dn);
+  el.addEventListener('touchend',up); el.addEventListener('mouseup',up);
+  el.addEventListener('touchcancel',up); el.addEventListener('mouseleave',up);
+});
+
+function setupBtn(id, onP, onR) {
+  const el = document.getElementById(id);
+  const dn = e => { e.preventDefault(); el.classList.add('pressed'); onP(); };
+  const up = e => { e.preventDefault(); el.classList.remove('pressed'); if(onR)onR(); };
+  el.addEventListener('touchstart',dn); el.addEventListener('mousedown',dn);
+  el.addEventListener('touchend',up); el.addEventListener('mouseup',up);
+  el.addEventListener('touchcancel',up); el.addEventListener('mouseleave',up);
+}
+
+const lookArea = document.getElementById('look-area');
+// マウスドラッグ視点移動：look-area がcanvasより前面にあるのでここで受け取る
+lookArea.addEventListener('mousedown', e => {
+  if ((game.state !== 'playing' && game.state !== 'playing_client') || game.paused) return;
+  mouseDragging = true; dragMoved = false;
+  lastMX = e.clientX; lastMY = e.clientY;
+  e.preventDefault();
+});
+lookArea.addEventListener('touchstart', e => {
+  if (touchLook.active) return;
+  const t = e.changedTouches[0];
+  touchLook = {active:true, startX:t.clientX, startY:t.clientY, id:t.identifier};
+  e.preventDefault();
+});
+lookArea.addEventListener('touchmove', e => {
+  for (const t of e.changedTouches) if (t.identifier === touchLook.id) {
+    mouseDX += (t.clientX - touchLook.startX)*0.5;
+    mouseDY += (t.clientY - touchLook.startY)*0.5;
+    touchLook.startX = t.clientX; touchLook.startY = t.clientY;
+  }
+  e.preventDefault();
+});
+lookArea.addEventListener('touchend', e => { for (const t of e.changedTouches) if (t.identifier===touchLook.id) touchLook.active=false; });
+lookArea.addEventListener('touchcancel', () => { touchLook.active = false; });
+
+/* ── AI ── */
+
+// 自プレイヤーが拾えるボールを距離に関係なく探す
+function ballReachable(p, b) {
+  const bd = p.getBounds();
+  return b.pos.z >= bd.zMin - 0.5 && b.pos.z <= bd.zMax + 0.5
+      && b.pos.x >= bd.xMin - 0.5 && b.pos.x <= bd.xMax + 0.5;
+}
+
+// 外野プレイヤーが目標へ向かうとき、敵内野を横切る場合はバック外野経由に迂回
+function outfieldNavTarget(p, targetPos) {
+  if (p.inField) return targetPos.clone();
+  const hW = CFG.COURT_W / 2, hL = CFG.COURT_L / 2, oD = CFG.OUTFIELD_D;
+  // 経路上の複数点をサンプルして敵内野を通るか確認
+  const forbidden = (x, z) => p.team === TEAM_BLUE
+    ? Math.abs(x) < hW - 0.3 && z > 0.3 && z < hL - 0.3
+    : Math.abs(x) < hW - 0.3 && z < -0.3 && z > -(hL - 0.3);
+  let crosses = false;
+  for (let t = 0.15; t <= 0.85; t += 0.15) {
+    const mx = p.pos.x + (targetPos.x - p.pos.x) * t;
+    const mz = p.pos.z + (targetPos.z - p.pos.z) * t;
+    if (forbidden(mx, mz)) { crosses = true; break; }
+  }
+  if (!crosses) return targetPos.clone();
+  // 迂回: バック外野（安全な通路）経由のウェイポイント
+  const backZ = p.team === TEAM_BLUE ? hL + oD * 0.5 : -(hL + oD * 0.5);
+  const midX = THREE.MathUtils.clamp(
+    (p.pos.x + targetPos.x) * 0.5, -(hW + oD - 0.5), hW + oD - 0.5
+  );
+  return new THREE.Vector3(midX, 0, backZ);
+}
+
+function findSeekableBall(p) {
+  let best = null, bestD = Infinity;
+  for (const b of balls) {
+    if (b.heldBy || b.flying) continue;
+    if (!ballReachable(p, b)) continue; // 自分の移動範囲外のボールは無視
+    const d = b.pos.distanceTo(p.pos);
+    if (d < bestD) { bestD = d; best = b; }
+  }
+  return best;
+}
+
+// 外野AIの徘徊目標（内野に入らない）
+function pickOutfieldTarget(p) {
+  const hW = CFG.COURT_W / 2, hL = CFG.COURT_L / 2, oD = CFG.OUTFIELD_D;
+  const zone = Math.floor(Math.random() * 3);
+  const r = () => Math.random();
+  if (p.team === TEAM_BLUE) {
+    if (zone === 0) return new THREE.Vector3((r()-0.5) * (TOTAL_W-2), 0, hL + 0.5 + r()*(oD-1));
+    if (zone === 1) return new THREE.Vector3( hW + 0.5 + r()*(oD-1), 0, r() * hL * 0.9);
+    return               new THREE.Vector3(-(hW + 0.5 + r()*(oD-1)), 0, r() * hL * 0.9);
+  } else {
+    if (zone === 0) return new THREE.Vector3((r()-0.5) * (TOTAL_W-2), 0, -(hL + 0.5 + r()*(oD-1)));
+    if (zone === 1) return new THREE.Vector3( hW + 0.5 + r()*(oD-1), 0, -r() * hL * 0.9);
+    return               new THREE.Vector3(-(hW + 0.5 + r()*(oD-1)), 0, -r() * hL * 0.9);
+  }
+}
+
+function canPickUp(p, b) {
+  if (b.heldBy || b.flying) return false;
+  if (b.pos.distanceTo(p.pos) > 1.5) return false;
+  return ballReachable(p, b);
+}
+
+function findTarget(p) {
+  let best = null, bestD = Infinity;
+  for (const t of players) {
+    if (!t.alive || t.team === p.team || !t.inField) continue;
+    const d = t.pos.distanceTo(p.pos);
+    if (d < bestD) { bestD = d; best = t; }
+  }
+  return best;
+}
+
+function findIncomingBall(p) {
+  for (const b of balls) {
+    if (!b.flying || !b.thrownBy || b.thrownBy.team === p.team) continue;
+    const toP = p.pos.clone().sub(b.pos);
+    if (toP.dot(b.vel.clone().normalize()) > 0 && b.pos.distanceTo(p.pos) < 8) return b;
+  }
+  return null;
+}
+
+function updateAI(p, dt) {
+  if (!p.alive) return;
+  p.aiTimer -= dt;
+
+  // 内野プレイヤーのみ回避・キャッチ判定
+  if (p.inField) {
+    const incoming = findIncomingBall(p);
+    if (incoming && !p.ball) {
+      const dist = incoming.pos.distanceTo(p.pos);
+      if (dist < 6 && Math.random() < CFG.AI_CATCH_CHANCE * dt * 2) {
+        if (dist > CFG.CATCH_PERFECT[0] && dist < CFG.CATCH_PERFECT[1]) {
+          p.pickUp(incoming);
+          if (incoming.thrownBy && incoming.thrownBy.inField) incoming.thrownBy.sendToOutfield();
+          incoming.thrownBy = null;
+          p.aiState = 'has_ball'; p.aiTimer = 0.5 + Math.random();
+          return;
+        }
+      }
+      if (Math.random() < CFG.AI_DODGE_CHANCE * dt * 3) {
+        p.aiState = 'dodging'; p.aiDodgeDir = Math.random() > 0.5 ? 1 : -1;
+        if (Math.random() < 0.3) p.jump();
+        if (Math.random() < 0.2) p.setCrouch(true);
+      }
+    } else {
+      p.setCrouch(false);
+    }
+  }
+
+  // ボール所持中 → 即座に投げる
+  if (p.ball) {
+    p.aiState = 'has_ball';
+    if (p.aiTimer <= 0) {
+      const target = findTarget(p);
+      if (target) {
+        const dir = target.pos.clone().sub(p.pos);
+        dir.y = 0; dir.normalize();
+        dir.y = Math.random() < 0.5 ? -0.06 + Math.random() * 0.1 : 0.08 + Math.random() * 0.12;
+        dir.x += (Math.random()-0.5) * (1-CFG.AI_ACCURACY) * 0.7;
+        dir.z += (Math.random()-0.5) * (1-CFG.AI_ACCURACY) * 0.7;
+        dir.normalize();
+        p.yaw = Math.atan2(-dir.x, -dir.z);
+        p.throwBall(dir);
+      }
+      p.aiTimer = CFG.AI_THROW_DELAY[0] + Math.random() * (CFG.AI_THROW_DELAY[1] - CFG.AI_THROW_DELAY[0]);
+    }
+    return;
+  }
+
+  switch (p.aiState) {
+    case 'dodging':
+      p.vel.x = p.aiDodgeDir * CFG.MOVE_SPD;
+      p.vel.z *= 0.3;
+      if (p.aiTimer <= 0) { p.aiState = 'idle'; p.aiTimer = 0.3 + Math.random()*0.5; p.setCrouch(false); }
+      break;
+
+    case 'seeking_ball': {
+      const tb = p.targetBall;
+      if (tb && !tb.heldBy && !tb.flying && ballReachable(p, tb)) {
+        const navTarget = outfieldNavTarget(p, tb.pos); // 敵内野を避けた経由地点
+        const dir = navTarget.sub(p.pos); dir.y = 0;
+        if (dir.length() < 0.8 && tb.pos.distanceTo(p.pos) < 0.9) {
+          p.pickUp(tb); p.targetBall = null; p.aiState = 'has_ball';
+          p.aiTimer = CFG.AI_THROW_DELAY[0] + Math.random() * (CFG.AI_THROW_DELAY[1] - CFG.AI_THROW_DELAY[0]);
+        } else {
+          dir.normalize();
+          p.vel.x = dir.x * CFG.MOVE_SPD * 0.9;
+          p.vel.z = dir.z * CFG.MOVE_SPD * 0.9;
+          p.yaw = Math.atan2(-dir.x, -dir.z);
+        }
+      } else {
+        p.targetBall = null; p.aiState = 'idle'; p.aiTimer = 0.3;
+      }
+      break;
+    }
+
+    default: {
+      if (p.aiTimer <= 0) {
+        const seekBall = findSeekableBall(p);
+        if (seekBall) {
+          p.aiState = 'seeking_ball';
+          p.targetBall = seekBall;
+          p.aiTimer = 5; // タイムアウト付き
+          break;
+        }
+        // ランダム徘徊（外野は内野に入らない目標を選ぶ）
+        if (p.inField) {
+          const b = p.getBounds();
+          p.aiTarget.set(
+            b.xMin + Math.random() * (b.xMax - b.xMin), 0,
+            b.zMin + Math.random() * (b.zMax - b.zMin)
+          );
+        } else {
+          p.aiTarget.copy(pickOutfieldTarget(p));
+        }
+        p.aiTimer = 1.5 + Math.random() * 2;
+      }
+      const toT = p.aiTarget.clone().sub(p.pos); toT.y = 0;
+      if (toT.length() > 0.5) {
+        toT.normalize();
+        p.vel.x = toT.x * CFG.MOVE_SPD * 0.45;
+        p.vel.z = toT.z * CFG.MOVE_SPD * 0.45;
+        p.yaw = Math.atan2(-toT.x, -toT.z);
+      } else { p.vel.x *= 0.9; p.vel.z *= 0.9; }
+    }
+  }
+}
+
+/* ── Game ── */
+let humanPlayer = null;
+
+const game = {
+  state: 'menu',
+  paused: false,
+  catchAttempt: false,
+  countdownTimer: 0,
+  gameTime: 0,
+  ballMilestones: [90, 180],
+  GAME_LIMIT: 270,
+  mode: 'solo',
+  mySlot: 0,
+
+  init() {
+    buildCourt();
+    this.setupUI();
+  },
+
+  setupUI() {
+    document.getElementById('btn-solo').addEventListener('click', () => {
+      this.mode = 'solo'; this.startGame();
+    });
+    document.getElementById('btn-multi').addEventListener('click', () => {
+      document.getElementById('menu').style.display = 'none';
+      document.getElementById('mp-menu').style.display = 'flex';
+      document.getElementById('mp-error').textContent = '';
+    });
+    document.getElementById('btn-create-room').addEventListener('click', () => {
+      net.connect(() => { net.createRoom(); });
+    });
+    document.getElementById('btn-join-room').addEventListener('click', () => {
+      const key = document.getElementById('room-key-input').value.trim();
+      if (key.length !== 4) { document.getElementById('mp-error').textContent = '4桁のキーを入力してください'; return; }
+      net.connect(() => { net.joinRoom(key); });
+    });
+    document.getElementById('btn-mp-back').addEventListener('click', () => {
+      document.getElementById('mp-menu').style.display = 'none';
+      document.getElementById('menu').style.display = 'flex';
+    });
+    document.getElementById('btn-lobby-back').addEventListener('click', () => {
+      net.disconnect();
+      document.getElementById('lobby').style.display = 'none';
+      document.getElementById('mp-menu').style.display = 'flex';
+    });
+    document.getElementById('btn-start-mp').addEventListener('click', () => {
+      if (net.isHost) {
+        net.send({ type: 'start_game' });
+        this.mode = 'multi';
+        this.startMultiplayerGame(net.mySlot, true, net.getHumanSlots());
+      }
+    });
+    document.getElementById('retry-btn').addEventListener('click', () => {
+      if (this.mode === 'multi') {
+        net.disconnect();
+        document.getElementById('result').style.display = 'none';
+        document.getElementById('menu').style.display = 'flex';
+      } else {
+        this.startGame();
+      }
+    });
+
+    setupBtn('btn-jump', () => { if (humanPlayer && humanPlayer.alive) humanPlayer.jump(); });
+    setupBtn('btn-crouch',
+      () => { if (humanPlayer && humanPlayer.alive) humanPlayer.setCrouch(true); },
+      () => { if (humanPlayer && humanPlayer.alive) humanPlayer.setCrouch(false); }
+    );
+    setupBtn('btn-throw', () => {
+      if (humanPlayer && humanPlayer.alive && humanPlayer.ball) {
+        if (this.mode === 'multi' && !net.isHost) { net.sendAction('throw'); }
+        else { humanPlayer.throwBall(humanPlayer.getLookDir()); }
+      }
+    });
+    setupBtn('btn-catch', () => {
+      if (humanPlayer && humanPlayer.alive && this.state === 'playing') {
+        humanPlayer.catchAttempt = true;
+        setTimeout(() => { if (humanPlayer) humanPlayer.catchAttempt = false; }, 800);
+        if (this.mode === 'multi' && !net.isHost) net.sendAction('catch');
+      }
+    });
+
+    document.getElementById('btn-return').addEventListener('click', () => {
+      if (this.mode === 'multi' && !net.isHost) { net.send({ type: 'choice_result', returnToField: true }); document.getElementById('choice-modal').classList.remove('show'); this.paused = false; }
+      else this.resolveChoice(true);
+    });
+    document.getElementById('btn-stay').addEventListener('click', () => {
+      if (this.mode === 'multi' && !net.isHost) { net.send({ type: 'choice_result', returnToField: false }); document.getElementById('choice-modal').classList.remove('show'); this.paused = false; }
+      else this.resolveChoice(false);
+    });
+  },
+
+  startGame() {
+    document.getElementById('menu').style.display = 'none';
+    document.getElementById('result').style.display = 'none';
+    document.getElementById('choice-modal').classList.remove('show');
+    this.paused = false;
+
+    players.forEach(p => { if (p.mesh.parent) scene.remove(p.mesh); });
+    balls.forEach(b => { scene.remove(b.mesh); scene.remove(b.trail); });
+    players.length = 0; balls.length = 0;
+
+    const INITIAL_OUTFIELD = 2;
+    for (let i = 0; i < CFG.TEAM_SIZE; i++) {
+      players.push(Object.assign(new Player(i, TEAM_BLUE, i===0), {inField:true}));
+      players[players.length-1].setStartPos(i);
+    }
+    for (let i = 0; i < CFG.TEAM_SIZE; i++) {
+      players.push(Object.assign(new Player(CFG.TEAM_SIZE+i, TEAM_RED, false), {inField:true}));
+      players[players.length-1].setStartPos(i);
+    }
+    humanPlayer = players[0];
+
+    // 各チームの末尾2人を外野スタートにする（人間プレイヤー除く）
+    for (let i = CFG.TEAM_SIZE - INITIAL_OUTFIELD; i < CFG.TEAM_SIZE; i++) {
+      if (i !== 0) players[i].sendToOutfield(); // BLUE（0番が人間なので除外）
+    }
+    for (let i = CFG.TEAM_SIZE * 2 - INITIAL_OUTFIELD; i < CFG.TEAM_SIZE * 2; i++) {
+      players[i].sendToOutfield(); // RED
+    }
+
+    for (let i = 0; i < CFG.BALL_COUNT; i++) {
+      const b = new Ball(i); b.setStart(); balls.push(b);
+    }
+
+    this.gameTime = 0;
+    this.ballMilestones = [90, 180];
+    this.state = 'countdown'; this.countdownTimer = 3.5;
+    this.showMsg('3', '#fff');
+  },
+
+  startMultiplayerGame(mySlot, isHost, humanSlots) {
+    document.getElementById('lobby').style.display = 'none';
+    document.getElementById('menu').style.display = 'none';
+    document.getElementById('mp-menu').style.display = 'none';
+    document.getElementById('result').style.display = 'none';
+    document.getElementById('choice-modal').classList.remove('show');
+    this.paused = false;
+    this.mySlot = mySlot;
+
+    players.forEach(p => { if (p.mesh.parent) scene.remove(p.mesh); });
+    balls.forEach(b => { scene.remove(b.mesh); scene.remove(b.trail); });
+    players.length = 0; balls.length = 0;
+
+    const INITIAL_OUTFIELD = 2;
+    for (let i = 0; i < CFG.TEAM_SIZE; i++) {
+      const isMe = (i === mySlot);
+      const isRemoteHuman = !isMe && humanSlots.includes(i);
+      const p = new Player(i, TEAM_BLUE, isMe);
+      p.isRemote = isRemoteHuman;
+      p.inField = true;
+      p.setStartPos(i);
+      players.push(p);
+    }
+    for (let i = 0; i < CFG.TEAM_SIZE; i++) {
+      const slot = CFG.TEAM_SIZE + i;
+      const isMe = (slot === mySlot);
+      const isRemoteHuman = !isMe && humanSlots.includes(slot);
+      const p = new Player(slot, TEAM_RED, isMe);
+      p.isRemote = isRemoteHuman;
+      p.inField = true;
+      p.setStartPos(i);
+      players.push(p);
+    }
+    humanPlayer = players.find(p => p.id === mySlot);
+    if (!humanPlayer.isHuman) { humanPlayer.isHuman = true; }
+    if (!humanPlayer.mesh.parent) scene.add(humanPlayer.mesh);
+
+    for (let i = CFG.TEAM_SIZE - INITIAL_OUTFIELD; i < CFG.TEAM_SIZE; i++) {
+      const p = players[i];
+      if (!p.isHuman && !p.isRemote) p.sendToOutfield();
+    }
+    for (let i = CFG.TEAM_SIZE * 2 - INITIAL_OUTFIELD; i < CFG.TEAM_SIZE * 2; i++) {
+      const p = players[i];
+      if (!p.isHuman && !p.isRemote) p.sendToOutfield();
+    }
+
+    for (let i = 0; i < CFG.BALL_COUNT; i++) {
+      const b = new Ball(i); b.setStart(); balls.push(b);
+    }
+
+    this.gameTime = 0;
+    this.ballMilestones = [90, 180];
+
+    if (isHost) {
+      this.state = 'countdown'; this.countdownTimer = 3.5;
+      this.showMsg('3', '#fff');
+      net.startBroadcast();
+    } else {
+      this.state = 'playing_client';
+      net.startInputSend();
+    }
+
+    const cs = document.getElementById('conn-status');
+    cs.style.display = 'block';
+    cs.textContent = isHost ? 'HOST' : 'CLIENT';
+    cs.style.background = isHost ? 'rgba(0,180,0,.6)' : 'rgba(0,100,220,.6)';
+  },
+
+  addExtraBall() {
+    const hW = CFG.COURT_W / 2 - 1, hL = CFG.COURT_L / 2 - 1;
+    const b = new Ball(balls.length);
+    // 内野中央付近のランダム位置（左右どちらかの陣地）
+    const side = Math.random() < 0.5 ? -1 : 1;
+    b.pos.set((Math.random() - 0.5) * hW * 2, CFG.BALL_R, side * (1 + Math.random() * (hL - 1)));
+    b.vel.set(0, 0, 0);
+    b.flying = false;
+    balls.push(b);
+    this.showMsg('ボール追加！', '#ff0');
+  },
+
+  onOutfieldHit(thrower) {
+    if (thrower.isHuman) {
+      this.paused = true;
+      this._choiceThrower = thrower;
+      document.getElementById('choice-modal').classList.add('show');
+      if (pointerLocked) document.exitPointerLock();
+    } else if (thrower.isRemote) {
+      if (game.mode === 'multi' && net.isHost) {
+        this.paused = true;
+        this._choiceThrower = thrower;
+        net.send({ type: 'choice_request', targetSlot: thrower.id });
+      }
+    } else {
+      // 味方内野の人数が少ないほど高確率で復帰
+      const infieldCount = players.filter(p => p.team === thrower.team && p.alive && p.inField).length;
+      const returnChance = 0.25 + 0.75 * (1 - infieldCount / CFG.TEAM_SIZE);
+      if (Math.random() < returnChance) {
+        thrower.returnToInfield();
+      }
+    }
+  },
+
+  resolveChoice(returnToField) {
+    document.getElementById('choice-modal').classList.remove('show');
+    this.paused = false;
+    if (this._choiceThrower) {
+      if (returnToField) {
+        this._choiceThrower.returnToInfield();
+        this.showMsg('内野に復帰！', '#0f0');
+      } else {
+        this.showMsg('外野に残留', '#ff0');
+      }
+      this._choiceThrower = null;
+    }
+  },
+
+  update(dt) {
+    // Client mode: render from received state
+    if (this.state === 'playing_client') {
+      this.handleInput(dt);
+      if (net.lastRecvState) this.applyNetState(net.lastRecvState);
+      this.updateCatchUI();
+      this.updateCamera(dt);
+      this.updateHUD();
+      this.updateMinimap();
+      renderer.render(scene, camera);
+      return;
+    }
+
+    if (this.state === 'countdown') {
+      this.countdownTimer -= dt;
+      const n = Math.ceil(this.countdownTimer);
+      if (n <= 0) { this.state = 'playing'; this.showMsg('GO!', '#0f0'); }
+      else { const el = document.getElementById('msg'); if (el.textContent !== String(n)) this.showMsg(String(n),'#fff'); }
+      this.updateCamera(dt);
+      this.updateHUD();
+      if (this.mode === 'multi' && net.isHost) net.broadcastState();
+      renderer.render(scene, camera);
+      return;
+    }
+    if (this.state !== 'playing') return;
+    if (this.paused) { this.updateCamera(dt); this.updateHUD(); renderer.render(scene, camera); return; }
+
+    this.handleInput(dt);
+    // Apply remote inputs on host
+    if (this.mode === 'multi' && net.isHost) {
+      for (const p of players) {
+        if (p.isRemote && p.alive) applyRemoteInput(p, dt);
+      }
+    }
+    for (const p of players) { if (!p.isHuman && !p.isRemote && p.alive) updateAI(p, dt); }
+    for (const p of players) p.update(dt);
+    for (const b of balls) b.update(dt);
+
+    // AI ball pickup
+    for (const p of players) {
+      if (!p.alive || p.ball || p.isHuman || p.isRemote) continue;
+      for (const b of balls) {
+        if (b.heldBy || b.flying) continue;
+        if (b.pos.distanceTo(p.pos) < 1.0 && canPickUp(p, b)) { p.pickUp(b); break; }
+      }
+    }
+    // Human + remote human ball pickup
+    for (const p of players) {
+      if (!p.alive || p.ball || (!p.isHuman && !p.isRemote)) continue;
+      for (const b of balls) {
+        if (b.heldBy || b.flying) continue;
+        const dist = p.isHuman ? 1.2 : 1.0;
+        if (b.pos.distanceTo(p.pos) < dist && canPickUp(p, b)) { p.pickUp(b); break; }
+      }
+    }
+
+    if (!this.paused) {
+      this.gameTime += dt;
+      while (this.ballMilestones.length && this.gameTime >= this.ballMilestones[0]) {
+        this.ballMilestones.shift();
+        this.addExtraBall();
+      }
+      if (this.gameTime >= this.GAME_LIMIT) {
+        const blueIn2 = players.filter(p => p.team === TEAM_BLUE && p.alive && p.inField).length;
+        const redIn2  = players.filter(p => p.team === TEAM_RED  && p.alive && p.inField).length;
+        this.endGame(blueIn2 >= redIn2 ? TEAM_BLUE : TEAM_RED, true);
+        return;
+      }
+    }
+
+    this.updateCatchUI();
+    this.updateCamera(dt);
+    this.updateHUD();
+    this.updateMinimap();
+
+    const blueIn = players.filter(p => p.team === TEAM_BLUE && p.alive && p.inField).length;
+    const redIn = players.filter(p => p.team === TEAM_RED && p.alive && p.inField).length;
+    if (blueIn === 0 || redIn === 0) this.endGame(blueIn > 0 ? TEAM_BLUE : TEAM_RED, false);
+
+    if (this.mode === 'multi' && net.isHost) net.broadcastState();
+    renderer.render(scene, camera);
+  },
+
+  applyNetState(st) {
+    if (!st) return;
+    for (let i = 0; i < st.p.length && i < players.length; i++) {
+      const d = st.p[i], p = players[i];
+      if (p.isHuman) {
+        p.pos.set(d[0], d[1], d[2]);
+        p.inField = !!d[5]; p.alive = !!d[6];
+        p.crouching = !!d[7]; p.height = d[9];
+        p.eyeH = p.crouching ? CFG.CROUCH_EYE : CFG.EYE_H;
+        const ballId = d[8];
+        p.ball = ballId >= 0 && ballId < balls.length ? balls[ballId] : null;
+      } else {
+        p.pos.set(d[0], d[1], d[2]);
+        p.yaw = d[3]; p.pitch = d[4];
+        p.inField = !!d[5]; p.alive = !!d[6];
+        p.crouching = !!d[7]; p.height = d[9];
+        p.eyeH = p.crouching ? CFG.CROUCH_EYE : CFG.EYE_H;
+        const ballId = d[8];
+        p.ball = ballId >= 0 && ballId < balls.length ? balls[ballId] : null;
+        p.hitFlash = d[10] || 0;
+      }
+      p.mesh.position.set(p.pos.x, p.pos.y, p.pos.z);
+      p.mesh.rotation.y = -p.yaw + Math.PI;
+      p.mesh.visible = p.alive;
+      if (p.crouching) {
+        p.bodyMesh.scale.y = 0.6; p.bodyMesh.position.y = 0.5; p.headMesh.position.y = 0.95;
+      } else {
+        p.bodyMesh.scale.y = 1; p.bodyMesh.position.y = 0.7; p.headMesh.position.y = 1.32;
+      }
+      p.bodyMat.transparent = !p.inField;
+      p.bodyMat.opacity = p.inField ? 1 : 0.65;
+      if (p.hitFlash > 0) { p.bodyMat.emissive.setHex(0xff0000); p.bodyMat.emissiveIntensity = p.hitFlash; }
+      else { p.bodyMat.emissive.setHex(0x000000); }
+    }
+    // Balls
+    while (balls.length < st.b.length) {
+      const nb = new Ball(balls.length); balls.push(nb);
+    }
+    for (let i = 0; i < st.b.length; i++) {
+      const d = st.b[i], b = balls[i];
+      b.pos.set(d[0], d[1], d[2]);
+      b.vel.set(d[3], d[4], d[5]);
+      b.flying = !!d[6];
+      const hid = d[7];
+      b.heldBy = hid >= 0 && hid < players.length ? players[hid] : null;
+      b.mesh.position.copy(b.pos);
+      b.trail.visible = b.flying && !b.heldBy;
+      if (b.flying && b.heldBy == null) {
+        b.trailPositions.push(b.pos.clone());
+        if (b.trailPositions.length > 10) b.trailPositions.shift();
+        const arr = b.trail.geometry.attributes.position.array;
+        for (let j = 0; j < 10; j++) {
+          const tp = b.trailPositions[j] || b.pos;
+          arr[j*3] = tp.x; arr[j*3+1] = tp.y; arr[j*3+2] = tp.z;
+        }
+        b.trail.geometry.attributes.position.needsUpdate = true;
+        b.trail.geometry.setDrawRange(0, Math.min(b.trailPositions.length, 10));
+      }
+    }
+    this.gameTime = st.t;
+    if (st.s === 'ended' && this.state !== 'ended') {
+      this.state = 'ended';
+      const blueIn = players.filter(p => p.team === TEAM_BLUE && p.alive && p.inField).length;
+      const redIn = players.filter(p => p.team === TEAM_RED && p.alive && p.inField).length;
+      const myTeam = humanPlayer.team;
+      const won = (blueIn >= redIn && myTeam === TEAM_BLUE) || (redIn > blueIn && myTeam === TEAM_RED);
+      document.getElementById('result').style.display = 'flex';
+      document.getElementById('result-title').textContent = won ? 'WIN!' : 'LOSE...';
+      document.getElementById('result-title').style.color = won ? '#4f8' : '#f44';
+      document.getElementById('result-desc').textContent = `BLUE ${blueIn}人 vs RED ${redIn}人`;
+    }
+    if (st.ev) {
+      for (const ev of st.ev) {
+        if (ev.type === 'hit') triggerHitEffect(new THREE.Vector3(ev.x, ev.y, ev.z));
+        if (ev.type === 'msg') this.showMsg(ev.text, ev.color);
+      }
+    }
+  },
+
+  handleInput(dt) {
+    if (!humanPlayer || !humanPlayer.alive) return;
+    const sens = 0.005;
+    humanPlayer.yaw -= mouseDX * sens;
+    humanPlayer.pitch -= mouseDY * sens;
+    humanPlayer.pitch = THREE.MathUtils.clamp(humanPlayer.pitch, -Math.PI/3, Math.PI/3);
+    mouseDX = 0; mouseDY = 0;
+
+    // Client mode: only handle look, send input to host
+    if (this.mode === 'multi' && !net.isHost) return;
+
+    const fwd = humanPlayer.getForward();
+    const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+    const move = new THREE.Vector3();
+    if (keys['KeyW']||keys['ArrowUp']||btnState.up) move.add(fwd);
+    if (keys['KeyS']||keys['ArrowDown']||btnState.down) move.sub(fwd);
+    if (keys['KeyA']||keys['ArrowLeft']||btnState.left) move.sub(right);
+    if (keys['KeyD']||keys['ArrowRight']||btnState.right) move.add(right);
+
+    if (move.length() > 0) {
+      move.normalize();
+      const spd = humanPlayer.crouching ? CFG.MOVE_SPD*0.5 : CFG.MOVE_SPD;
+      humanPlayer.vel.x = move.x * spd; humanPlayer.vel.z = move.z * spd;
+    } else { humanPlayer.vel.x *= 0.85; humanPlayer.vel.z *= 0.85; }
+
+    if (keys['Space']) humanPlayer.jump();
+    if (keys['ShiftLeft']||keys['ShiftRight']||keys['KeyC']) humanPlayer.setCrouch(true);
+    else if (!document.getElementById('btn-crouch').classList.contains('pressed')) humanPlayer.setCrouch(false);
+
+    if (keys['KeyE']) {
+      if (!this._cp) { humanPlayer.catchAttempt = true; this._cp = true; setTimeout(()=>{ if(humanPlayer) humanPlayer.catchAttempt=false; },400); }
+    } else { this._cp = false; }
+  },
+
+  updateCamera(dt) {
+    if (!humanPlayer) return;
+    if (cameraShake > 0) {
+      cameraShake -= dt * 3.5;
+      const s = Math.max(0, cameraShake);
+      camera.position.set(
+        humanPlayer.pos.x + (Math.random()-0.5)*s*0.4,
+        humanPlayer.pos.y + humanPlayer.eyeH + (Math.random()-0.5)*s*0.25,
+        humanPlayer.pos.z + (Math.random()-0.5)*s*0.4
+      );
+    } else {
+      cameraShake = 0;
+      camera.position.set(humanPlayer.pos.x, humanPlayer.pos.y + humanPlayer.eyeH, humanPlayer.pos.z);
+    }
+    camera.rotation.order = 'YXZ';
+    camera.rotation.y = humanPlayer.yaw;
+    camera.rotation.x = humanPlayer.pitch;
+    camera.rotation.z = 0;
+  },
+
+  updateCatchUI() {
+    const ci = document.getElementById('catch-indicator'), cb = document.getElementById('btn-catch');
+    if (!humanPlayer || !humanPlayer.alive || !humanPlayer.inField) { ci.className=''; cb.classList.remove('glow'); return; }
+    const incoming = findIncomingBall(humanPlayer);
+    if (incoming) {
+      const dist = incoming.pos.distanceTo(humanPlayer.pos);
+      ci.classList.add('active');
+      if (dist < CFG.CATCH_PERFECT[1] && dist > CFG.CATCH_PERFECT[0]) {
+        ci.className = 'active perfect';
+        document.getElementById('catch-text').textContent = 'CATCH NOW!';
+        cb.classList.add('glow');
+      } else if (dist < CFG.CATCH_OK[1] && dist > CFG.CATCH_OK[0]) {
+        ci.className = 'active early';
+        document.getElementById('catch-text').textContent = 'GET READY...';
+        cb.classList.remove('glow');
+      } else {
+        ci.className = 'active far';
+        document.getElementById('catch-text').textContent = dist < CFG.CATCH_PERFECT[0] ? 'TOO CLOSE!' : 'INCOMING!';
+        cb.classList.remove('glow');
+      }
+    } else { ci.className=''; cb.classList.remove('glow'); }
+  },
+
+  updateHUD() {
+    const bIn = players.filter(p=>p.team===TEAM_BLUE&&p.alive&&p.inField).length;
+    const bOut = players.filter(p=>p.team===TEAM_BLUE&&p.alive&&!p.inField).length;
+    const rIn = players.filter(p=>p.team===TEAM_RED&&p.alive&&p.inField).length;
+    const rOut = players.filter(p=>p.team===TEAM_RED&&p.alive&&!p.inField).length;
+    document.getElementById('score-a').innerHTML = `BLUE<br>内野:${bIn} 外野:${bOut}`;
+    document.getElementById('score-b').innerHTML = `RED<br>内野:${rIn} 外野:${rOut}`;
+
+    // タイマー表示
+    const elapsed = Math.max(0, this.GAME_LIMIT - this.gameTime);
+    const mm = Math.floor(elapsed / 60);
+    const ss = Math.floor(elapsed % 60);
+    const tEl = document.getElementById('timer');
+    tEl.textContent = `${mm}:${ss.toString().padStart(2, '0')}`;
+    // 残り30秒で赤く点滅
+    tEl.style.color = elapsed <= 30 ? (Math.floor(this.gameTime * 2) % 2 === 0 ? '#f44' : '#fff') : '#fff';
+
+    const pl = document.getElementById('pos-label');
+    if (humanPlayer && humanPlayer.alive) {
+      pl.textContent = humanPlayer.inField ? '【内野】' : '【外野】';
+      pl.style.background = humanPlayer.inField ? 'rgba(30,100,220,.7)' : 'rgba(180,120,0,.7)';
+      pl.style.display = 'block';
+    } else { pl.style.display = 'none'; }
+
+    const bs = document.getElementById('ball-status');
+    if (humanPlayer && humanPlayer.alive) {
+      if (humanPlayer.ball) { bs.textContent = 'ボール所持中！投げよう！'; bs.style.background = 'rgba(0,150,0,.6)'; }
+      else { bs.textContent = 'ボールなし'; bs.style.background = 'rgba(0,0,0,.4)'; }
+    } else { bs.textContent = ''; bs.style.display = 'none'; }
+  },
+
+  updateMinimap() {
+    const mc = document.getElementById('minimap');
+    const ctx = mc.getContext('2d');
+    const W = 140, H = 140;
+    mc.width = W; mc.height = H;
+    ctx.clearRect(0, 0, W, H);
+
+    // 全体エリア: x ∈ [-hW-oD, hW+oD], z ∈ [-hL-oD, hL+oD]
+    const hW = CFG.COURT_W/2, hL = CFG.COURT_L/2, oD = CFG.OUTFIELD_D;
+    const totalW = CFG.COURT_W + oD*2, totalL = CFG.COURT_L + oD*2;
+    const ox = 2, oz = 2, IW = W-4, IH = H-4;
+    const sx = IW / totalW, sz = IH / totalL;
+
+    // 座標変換: ワールド → ミニマップ
+    const mx = x => ox + (x + hW + oD) * sx;
+    const mz = z => oz + (z + hL + oD) * sz;
+
+    // 背景（外野ゾーン）
+    ctx.fillStyle = 'rgba(80,55,15,.5)';
+    ctx.fillRect(ox, oz, IW, IH);
+
+    // 内野（中央の明るい矩形）
+    ctx.fillStyle = 'rgba(160,120,50,.5)';
+    ctx.fillRect(mx(-hW), mz(-hL), CFG.COURT_W*sx, CFG.COURT_L*sz);
+
+    // ライン
+    ctx.strokeStyle = 'rgba(255,255,255,.5)'; ctx.lineWidth = 1;
+    // 内野境界
+    ctx.strokeRect(mx(-hW), mz(-hL), CFG.COURT_W*sx, CFG.COURT_L*sz);
+    // センターライン
+    ctx.beginPath(); ctx.moveTo(mx(-hW-oD), mz(0)); ctx.lineTo(mx(hW+oD), mz(0)); ctx.stroke();
+    // 外野サイドライン
+    ctx.setLineDash([2,2]);
+    ctx.beginPath(); ctx.moveTo(mx(-hW-oD), mz(-hL)); ctx.lineTo(mx(-hW), mz(-hL)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mx(-hW-oD), mz( hL)); ctx.lineTo(mx(-hW), mz( hL)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mx( hW),    mz(-hL)); ctx.lineTo(mx( hW+oD), mz(-hL)); ctx.stroke();
+    ctx.beginPath(); ctx.moveTo(mx( hW),    mz( hL)); ctx.lineTo(mx( hW+oD), mz( hL)); ctx.stroke();
+    ctx.setLineDash([]);
+
+    // プレイヤー
+    for (const p of players) {
+      if (!p.alive) continue;
+      const px = mx(p.pos.x), pz = mz(p.pos.z);
+      if (p.isHuman) {
+        ctx.fillStyle = '#00ff00';
+        ctx.fillRect(px-3, pz-3, 6, 6);
+      } else {
+        ctx.fillStyle = p.team === TEAM_BLUE
+          ? (p.inField ? '#4488ff' : '#1144aa')
+          : (p.inField ? '#ff4444' : '#aa1111');
+        ctx.beginPath(); ctx.arc(px, pz, 2.5, 0, Math.PI*2); ctx.fill();
+      }
+    }
+    // ボール
+    for (const b of balls) {
+      if (b.heldBy) continue;
+      ctx.fillStyle = '#ff8800';
+      ctx.beginPath(); ctx.arc(mx(b.pos.x), mz(b.pos.z), 3, 0, Math.PI*2); ctx.fill();
+    }
+  },
+
+  showMsg(text, color) {
+    const el = document.getElementById('msg');
+    el.textContent = text; el.style.color = color||'#fff';
+    el.style.display = 'block'; el.style.fontSize = text.length > 8 ? '36px' : '64px';
+    clearTimeout(this._mt);
+    this._mt = setTimeout(() => { el.style.display = 'none'; }, 1500);
+  },
+
+  endGame(winnerTeam, timeUp = false) {
+    this.state = 'ended';
+    const blueIn = players.filter(p => p.team === TEAM_BLUE && p.alive && p.inField).length;
+    const redIn  = players.filter(p => p.team === TEAM_RED  && p.alive && p.inField).length;
+    const myTeam = humanPlayer ? humanPlayer.team : TEAM_BLUE;
+    const won = winnerTeam === myTeam;
+    document.getElementById('result').style.display = 'flex';
+    document.getElementById('result-title').textContent = won ? 'WIN!' : 'LOSE...';
+    document.getElementById('result-title').style.color = won ? '#4f8' : '#f44';
+    if (timeUp) {
+      document.getElementById('result-desc').textContent =
+        `時間切れ！ BLUE ${blueIn}人 vs RED ${redIn}人 → ${winnerTeam === TEAM_BLUE ? 'BLUEの勝利！' : 'REDの勝利...'}`;
+    } else {
+      document.getElementById('result-desc').textContent = won
+        ? '勝利！おめでとう！' : '負け...次は勝とう！';
+    }
+    if (pointerLocked) document.exitPointerLock();
+    if (this.mode === 'multi') {
+      net.stopIntervals();
+      if (net.isHost) net.broadcastState();
+    }
+  }
+};
+
+/* ── Hit Effects ── */
+let cameraShake = 0;
+const particles = [];
+
+function spawnHitParticles(pos) {
+  const colors = [0xff6600, 0xffcc00, 0xff3300, 0xffffff];
+  for (let i = 0; i < 14; i++) {
+    const geo = new THREE.SphereGeometry(0.05 + Math.random()*0.07, 5, 5);
+    const mat = new THREE.MeshBasicMaterial({color: colors[Math.floor(Math.random()*colors.length)]});
+    const mesh = new THREE.Mesh(geo, mat);
+    mesh.position.copy(pos);
+    scene.add(mesh);
+    const vel = new THREE.Vector3(
+      (Math.random()-0.5)*12,
+      Math.random()*8 + 2,
+      (Math.random()-0.5)*12
+    );
+    particles.push({mesh, vel, life: 0.55 + Math.random()*0.25, maxLife: 0.8});
+  }
+}
+
+function updateParticles(dt) {
+  for (let i = particles.length-1; i >= 0; i--) {
+    const p = particles[i];
+    p.life -= dt;
+    if (p.life <= 0) { scene.remove(p.mesh); particles.splice(i,1); continue; }
+    p.vel.y -= 20 * dt;
+    p.mesh.position.addScaledVector(p.vel, dt);
+    const t = p.life / p.maxLife;
+    p.mesh.material.opacity = t;
+    p.mesh.material.transparent = true;
+    p.mesh.scale.setScalar(t * 1.2);
+  }
+}
+
+function triggerHitEffect(hitPos) {
+  const flash = document.getElementById('hit-flash');
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 120);
+
+  const ht = document.getElementById('hit-text');
+  ht.style.animation = 'none';
+  ht.style.opacity = '1';
+  void ht.offsetWidth;
+  ht.style.animation = 'hitPop 0.7s ease-out forwards';
+
+  cameraShake = 0.18;
+  spawnHitParticles(hitPos);
+
+  if (game.mode === 'multi' && net.isHost) {
+    net.pendingEvents.push({ type: 'hit', x: +hitPos.x.toFixed(2), y: +hitPos.y.toFixed(2), z: +hitPos.z.toFixed(2) });
+  }
+}
+
+/* ── Remote Input (host applies these) ── */
+function applyRemoteInput(p, dt) {
+  const input = net.remoteInputs[p.id];
+  if (!input) return;
+
+  p.yaw = input.yaw;
+  p.pitch = input.pitch;
+
+  const fwd = p.getForward();
+  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
+  const move = new THREE.Vector3();
+  if (input.up) move.add(fwd);
+  if (input.down) move.sub(fwd);
+  if (input.left) move.sub(right);
+  if (input.right) move.add(right);
+
+  if (move.length() > 0) {
+    move.normalize();
+    const spd = p.crouching ? CFG.MOVE_SPD * 0.5 : CFG.MOVE_SPD;
+    p.vel.x = move.x * spd; p.vel.z = move.z * spd;
+  } else { p.vel.x *= 0.85; p.vel.z *= 0.85; }
+
+  if (input.jump) p.jump();
+  p.setCrouch(!!input.crouch);
+
+  if (input.throw && !p._prevThrow && p.ball) {
+    p.throwBall(p.getLookDir());
+  }
+  p._prevThrow = !!input.throw;
+
+  if (input.catch && !p._prevCatch) {
+    p.catchAttempt = true;
+    clearTimeout(p._catchTimer);
+    p._catchTimer = setTimeout(() => { p.catchAttempt = false; }, 800);
+  }
+  p._prevCatch = !!input.catch;
+}
+
+/* ── Network ── */
+const net = {
+  ws: null,
+  isHost: false,
+  mySlot: -1,
+  roomKey: '',
+  remoteSlots: new Set(),
+  remoteInputs: {},
+  pendingEvents: [],
+  lastRecvState: null,
+  connected: false,
+  _broadcastIv: null,
+  _inputIv: null,
+
+  connect(callback) {
+    if (this.ws && this.ws.readyState <= 1) { if (callback) callback(); return; }
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    this.ws = new WebSocket(`${proto}://${location.host}`);
+    this.ws.onopen = () => { this.connected = true; if (callback) callback(); };
+    this.ws.onclose = () => {
+      this.connected = false;
+      this.stopIntervals();
+      const cs = document.getElementById('conn-status');
+      cs.textContent = '切断されました'; cs.style.display = 'block'; cs.style.background = 'rgba(200,0,0,.7)';
+    };
+    this.ws.onerror = () => {
+      document.getElementById('mp-error').textContent = 'サーバーに接続できません';
+    };
+    this.ws.onmessage = (e) => {
+      try { this.onMessage(JSON.parse(e.data)); } catch(err) { console.error('net:', err); }
+    };
+  },
+
+  send(msg) {
+    if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));
+  },
+
+  createRoom() { this.send({ type: 'create_room', name: 'Host' }); },
+  joinRoom(key) { this.send({ type: 'join_room', key, name: 'Player' }); },
+
+  getHumanSlots() {
+    const slots = [this.mySlot];
+    this.remoteSlots.forEach(s => slots.push(s));
+    return slots;
+  },
+
+  onMessage(msg) {
+    switch (msg.type) {
+      case 'room_created':
+        this.isHost = true;
+        this.mySlot = msg.slot;
+        this.roomKey = msg.key;
+        this.remoteSlots.clear();
+        showLobby(msg.key, true, msg.players);
+        break;
+
+      case 'room_joined':
+        this.isHost = false;
+        this.mySlot = msg.slot;
+        this.roomKey = msg.key;
+        this.remoteSlots.clear();
+        if (msg.players) msg.players.forEach(p => { if (p.slot !== this.mySlot) this.remoteSlots.add(p.slot); });
+        showLobby(msg.key, false, msg.players);
+        break;
+
+      case 'player_joined':
+        this.remoteSlots.add(msg.slot);
+        updateLobbyPlayers(msg.players);
+        break;
+
+      case 'player_left':
+        this.remoteSlots.delete(msg.slot);
+        updateLobbyPlayers(msg.players);
+        if (game.state === 'playing' || game.state === 'playing_client') {
+          const p = players.find(pl => pl.id === msg.slot);
+          if (p) { p.isRemote = false; }
+        }
+        break;
+
+      case 'become_host':
+        this.isHost = true;
+        const cs = document.getElementById('conn-status');
+        cs.textContent = 'HOST (引継)'; cs.style.background = 'rgba(180,120,0,.7)';
+        break;
+
+      case 'game_start':
+        if (!this.isHost) {
+          game.mode = 'multi';
+          game.startMultiplayerGame(this.mySlot, false, msg.players.map(p => p.slot));
+        }
+        break;
+
+      case 'remote_input':
+        if (this.isHost) this.remoteInputs[msg.slot] = msg.input;
+        break;
+
+      case 'game_state':
+        if (!this.isHost) this.lastRecvState = msg.state;
+        break;
+
+      case 'choice_request':
+        if (!this.isHost && game.state === 'playing_client') {
+          game.paused = true;
+          game._choiceRemote = true;
+          document.getElementById('choice-modal').classList.add('show');
+        }
+        break;
+
+      case 'choice_result':
+        if (this.isHost && game._choiceThrower) {
+          game.resolveChoice(msg.returnToField);
+        }
+        break;
+
+      case 'error':
+        document.getElementById('mp-error').textContent = msg.message;
+        break;
+    }
+  },
+
+  sendInput() {
+    if (!this.connected || this.isHost || !humanPlayer) return;
+    this.send({
+      type: 'input',
+      input: {
+        up: !!(keys['KeyW'] || keys['ArrowUp'] || btnState.up),
+        down: !!(keys['KeyS'] || keys['ArrowDown'] || btnState.down),
+        left: !!(keys['KeyA'] || keys['ArrowLeft'] || btnState.left),
+        right: !!(keys['KeyD'] || keys['ArrowRight'] || btnState.right),
+        jump: !!keys['Space'],
+        crouch: !!(keys['ShiftLeft'] || keys['ShiftRight'] || keys['KeyC'] || document.getElementById('btn-crouch').classList.contains('pressed')),
+        throw: false,
+        catch: false,
+        yaw: humanPlayer.yaw,
+        pitch: humanPlayer.pitch
+      }
+    });
+  },
+
+  sendAction(action) {
+    if (!this.connected || this.isHost || !humanPlayer) return;
+    this.send({
+      type: 'input',
+      input: {
+        up: !!(keys['KeyW'] || keys['ArrowUp'] || btnState.up),
+        down: !!(keys['KeyS'] || keys['ArrowDown'] || btnState.down),
+        left: !!(keys['KeyA'] || keys['ArrowLeft'] || btnState.left),
+        right: !!(keys['KeyD'] || keys['ArrowRight'] || btnState.right),
+        jump: !!keys['Space'],
+        crouch: !!(keys['ShiftLeft'] || keys['ShiftRight'] || keys['KeyC']),
+        throw: action === 'throw',
+        catch: action === 'catch',
+        yaw: humanPlayer.yaw,
+        pitch: humanPlayer.pitch
+      }
+    });
+  },
+
+  broadcastState() {
+    if (!this.connected || !this.isHost) return;
+    const st = {
+      p: players.map(p => [
+        +p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2),
+        +p.yaw.toFixed(3), +p.pitch.toFixed(3),
+        p.inField ? 1 : 0, p.alive ? 1 : 0, p.crouching ? 1 : 0,
+        p.ball ? p.ball.id : -1, +p.height.toFixed(2), +(p.hitFlash || 0).toFixed(2)
+      ]),
+      b: balls.map(b => [
+        +b.pos.x.toFixed(2), +b.pos.y.toFixed(2), +b.pos.z.toFixed(2),
+        +b.vel.x.toFixed(1), +b.vel.y.toFixed(1), +b.vel.z.toFixed(1),
+        b.flying ? 1 : 0, b.heldBy ? b.heldBy.id : -1
+      ]),
+      t: +game.gameTime.toFixed(1),
+      s: game.state,
+      c: +game.countdownTimer.toFixed(1),
+      ev: this.pendingEvents.splice(0)
+    };
+    this.send({ type: 'game_state', state: st });
+  },
+
+  startBroadcast() {
+    this.stopIntervals();
+    this._broadcastIv = setInterval(() => this.broadcastState(), 50);
+  },
+
+  startInputSend() {
+    this.stopIntervals();
+    this._inputIv = setInterval(() => this.sendInput(), 50);
+  },
+
+  stopIntervals() {
+    if (this._broadcastIv) { clearInterval(this._broadcastIv); this._broadcastIv = null; }
+    if (this._inputIv) { clearInterval(this._inputIv); this._inputIv = null; }
+  },
+
+  disconnect() {
+    this.stopIntervals();
+    if (this.ws) { this.ws.close(); this.ws = null; }
+    this.connected = false;
+    this.remoteSlots.clear();
+    this.remoteInputs = {};
+    this.lastRecvState = null;
+    document.getElementById('conn-status').style.display = 'none';
+  }
+};
+
+/* ── Lobby UI helpers ── */
+function showLobby(key, isHost, playerList) {
+  document.getElementById('mp-menu').style.display = 'none';
+  document.getElementById('menu').style.display = 'none';
+  document.getElementById('lobby').style.display = 'flex';
+  document.getElementById('lobby-room-key').textContent = key;
+  document.getElementById('btn-start-mp').style.display = isHost ? 'block' : 'none';
+  document.getElementById('lobby-status').textContent = isHost
+    ? 'ホストです。プレイヤーが集まったら「ゲーム開始」を押してください'
+    : 'ホストがゲームを開始するのを待っています...';
+  updateLobbyPlayers(playerList);
+}
+
+function updateLobbyPlayers(playerList) {
+  const bluDiv = document.getElementById('blue-players');
+  const redDiv = document.getElementById('red-players');
+  bluDiv.innerHTML = ''; redDiv.innerHTML = '';
+
+  const humanSlots = new Set([net.mySlot, ...net.remoteSlots]);
+
+  for (let i = 0; i < 10; i++) {
+    const entry = document.createElement('div');
+    entry.className = 'player-entry';
+    const inList = playerList && playerList.find(p => p.slot === i);
+    if (i === net.mySlot) {
+      entry.classList.add('me');
+      entry.textContent = `#${i + 1} あなた`;
+    } else if (inList || humanSlots.has(i)) {
+      entry.classList.add('remote');
+      entry.textContent = `#${i + 1} ${inList ? inList.name : 'Player'}`;
+    } else {
+      entry.classList.add('ai');
+      entry.textContent = `#${i + 1} CPU`;
+    }
+    bluDiv.appendChild(entry);
+  }
+  for (let i = 10; i < 20; i++) {
+    const entry = document.createElement('div');
+    entry.className = 'player-entry';
+    const inList = playerList && playerList.find(p => p.slot === i);
+    if (i === net.mySlot) {
+      entry.classList.add('me');
+      entry.textContent = `#${i - 9} あなた`;
+    } else if (inList || humanSlots.has(i)) {
+      entry.classList.add('remote');
+      entry.textContent = `#${i - 9} ${inList ? inList.name : 'Player'}`;
+    } else {
+      entry.classList.add('ai');
+      entry.textContent = `#${i - 9} CPU`;
+    }
+    redDiv.appendChild(entry);
+  }
+
+  const count = humanSlots.size;
+  const statusEl = document.getElementById('lobby-status');
+  if (net.isHost) {
+    statusEl.textContent = `${count}/20人参加中 — プレイヤーが集まったら「ゲーム開始」を押してください`;
+  } else {
+    statusEl.textContent = `${count}/20人参加中 — ホストがゲーム開始するのを待っています...`;
+  }
+}
+
+game.init();
+
+function animate() {
+  requestAnimationFrame(animate);
+  const dt = Math.min(clock.getDelta(), 0.05);
+  updateParticles(dt);
+  game.update(dt);
+  if (game.state === 'menu' || game.state === 'lobby') {
+    const t = performance.now() * 0.001;
+    camera.position.set(Math.sin(t*0.2)*8, 5, Math.cos(t*0.2)*8);
+    camera.lookAt(0, 1, 0);
+    renderer.render(scene, camera);
+  }
+}
+animate();
+</script>
+</body>
+</html>

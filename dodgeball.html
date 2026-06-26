@@ -624,7 +624,7 @@ class Player {
     const b = this.ball; this.ball = null; b.heldBy = null;
     const lp = this.pos.clone(); lp.y += this.eyeH;
     lp.add(dir.clone().multiplyScalar(0.5));
-    b.launch(lp, dir, this, CFG.THROW_SPD);
+    b.launch(lp, dir, this, this.jumping ? 22 : CFG.THROW_SPD);
     this.throwCooldown = 0.3;
     if (this.isHuman) sfx.throw();
   }

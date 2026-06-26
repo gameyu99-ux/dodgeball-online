@@ -1380,7 +1380,12 @@ const game = {
       if (!p.alive || p.ball || p.isHuman || p.isRemote) continue;
       for (const b of balls) {
         if (b.heldBy || b.flying) continue;
-        if (b.pos.distanceTo(p.pos) < 1.0 && canPickUp(p, b)) { p.pickUp(b); break; }
+        if (b.pos.distanceTo(p.pos) < 1.0 && canPickUp(p, b)) {
+          p.pickUp(b);
+          p.aiState = 'has_ball';
+          p.aiTimer = CFG.AI_THROW_DELAY[0] + Math.random() * (CFG.AI_THROW_DELAY[1] - CFG.AI_THROW_DELAY[0]);
+          break;
+        }
       }
     }
     // Human + remote human ball pickup

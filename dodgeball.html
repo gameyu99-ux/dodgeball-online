@@ -792,6 +792,7 @@ class Ball {
           }
         }
 
+        sfx.hit();
         p.sendToOutfield();
         if (p.isHuman) {
           sfx.outfield();
@@ -1258,7 +1259,6 @@ const game = {
     this.state = 'countdown'; this.countdownTimer = 3.5;
     this.showMsg('3', '#fff');
     document.getElementById('pause-btn').style.display = 'block';
-    bgm.start();
   },
 
   startMultiplayerGame(mySlot, isHost, humanSlots) {
@@ -1323,7 +1323,6 @@ const game = {
     this.ballMilestones = [90, 180];
 
     document.getElementById('pause-btn').style.display = 'block';
-    bgm.start();
     if (isHost) {
       this.state = 'countdown'; this.countdownTimer = 3.5;
       this.showMsg('3', '#fff');
@@ -1746,7 +1745,6 @@ const game = {
 
   endGame(winnerTeam, timeUp = false) {
     this.state = 'ended';
-    bgm.stop();
     const blueIn = players.filter(p => p.team === TEAM_BLUE && p.alive && p.inField).length;
     const redIn  = players.filter(p => p.team === TEAM_RED  && p.alive && p.inField).length;
     const myTeam = humanPlayer ? humanPlayer.team : TEAM_BLUE;
@@ -1823,7 +1821,6 @@ function updateParticles(dt) {
 }
 
 function triggerHitEffect(hitPos) {
-  sfx.hit();
   const flash = document.getElementById('hit-flash');
   flash.classList.add('active');
   setTimeout(() => flash.classList.remove('active'), 120);

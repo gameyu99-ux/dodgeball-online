@@ -87,6 +87,13 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .mode-btn:hover{transform:scale(1.05)}
 .mode-solo{background:linear-gradient(135deg,#3498db,#2980b9)}
 .mode-multi{background:linear-gradient(135deg,#e74c3c,#c0392b)}
+#settings-panel{margin-top:22px;background:rgba(0,0,0,.38);border-radius:12px;padding:14px 22px;min-width:290px;color:#fff}
+#settings-panel h3{font-size:13px;margin-bottom:10px;opacity:.6;letter-spacing:1px;text-transform:uppercase}
+.set-row{display:flex;align-items:center;margin-bottom:8px;gap:10px}
+.set-row label{width:44px;font-size:13px;opacity:.8;flex-shrink:0}
+.set-row input[type=text]{flex:1;background:rgba(255,255,255,.12);border:1px solid rgba(255,255,255,.25);border-radius:6px;color:#fff;padding:5px 10px;font-size:14px;outline:none}
+.set-row input[type=range]{flex:1;accent-color:#3498db;cursor:pointer}
+.set-val{width:34px;font-size:12px;text-align:right;opacity:.65}
 #mp-menu{position:fixed;inset:0;background:url('bg.jpg') center/cover no-repeat;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
 #mp-menu::before{content:'';position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:0}
 #mp-menu>*{position:relative;z-index:1}
@@ -180,7 +187,29 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
     <button class="mode-btn mode-solo" id="btn-solo">ひとりでプレイ</button>
     <button class="mode-btn mode-multi" id="btn-multi">みんなでプレイ</button>
   </div>
-  <p style="font-size:12px;opacity:.5">WASD移動 / マウスで視点 / Spaceジャンプ / Shiftしゃがみ / クリック投げ / Eキャッチ</p>
+  <div id="settings-panel">
+    <h3>⚙ 設定</h3>
+    <div class="set-row">
+      <label>名前</label>
+      <input type="text" id="set-name" maxlength="12" placeholder="Player">
+    </div>
+    <div class="set-row">
+      <label>感度</label>
+      <input type="range" id="set-sens" min="0.2" max="3" step="0.1" value="1">
+      <span class="set-val" id="set-sens-val">1.0</span>
+    </div>
+    <div class="set-row">
+      <label>BGM</label>
+      <input type="range" id="set-bgm" min="0" max="1" step="0.05" value="0">
+      <span class="set-val" id="set-bgm-val">0%</span>
+    </div>
+    <div class="set-row">
+      <label>SE</label>
+      <input type="range" id="set-se" min="0" max="1" step="0.05" value="0.8">
+      <span class="set-val" id="set-se-val">80%</span>
+    </div>
+  </div>
+  <p style="font-size:12px;opacity:.5;margin-top:12px">WASD移動 / マウスで視点 / Spaceジャンプ / Shiftしゃがみ / クリック投げ / Eキャッチ</p>
 </div>
 
 <div id="mp-menu">
@@ -1129,6 +1158,7 @@ const game = {
   init() {
     buildCourt();
     this.setupUI();
+    setupSettings();
   },
 
   setupUI() {
@@ -1176,6 +1206,7 @@ const game = {
 
     document.getElementById('home-btn').addEventListener('click', () => {
       if (this.mode === 'multi') net.disconnect();
+      bgm.stop();
       document.getElementById('result').style.display = 'none';
       document.getElementById('menu').style.display = 'flex';
     });
@@ -1184,6 +1215,7 @@ const game = {
     document.getElementById('pause-resume').addEventListener('click', () => this.togglePause());
     document.getElementById('pause-home').addEventListener('click', () => {
       if (this.mode === 'multi') net.disconnect();
+      bgm.stop();
       this.closePauseMenu();
       document.getElementById('result').style.display = 'none';
       document.getElementById('menu').style.display = 'flex';
@@ -1259,6 +1291,7 @@ const game = {
     this.state = 'countdown'; this.countdownTimer = 3.5;
     this.showMsg('3', '#fff');
     document.getElementById('pause-btn').style.display = 'block';
+    bgm.start();
   },
 
   startMultiplayerGame(mySlot, isHost, humanSlots) {
@@ -1323,6 +1356,7 @@ const game = {
     this.ballMilestones = [90, 180];
 
     document.getElementById('pause-btn').style.display = 'block';
+    bgm.start();
     if (isHost) {
       this.state = 'countdown'; this.countdownTimer = 3.5;
       this.showMsg('3', '#fff');
@@ -1557,7 +1591,7 @@ const game = {
 
   handleInput(dt) {
     if (!humanPlayer || !humanPlayer.alive) return;
-    const sens = 0.005;
+    const sens = 0.005 * settings.sensitivity;
     humanPlayer.yaw -= mouseDX * sens;
     humanPlayer.pitch -= mouseDY * sens;
     humanPlayer.pitch = THREE.MathUtils.clamp(humanPlayer.pitch, -Math.PI/3, Math.PI/3);
@@ -1745,6 +1779,7 @@ const game = {
 
   endGame(winnerTeam, timeUp = false) {
     this.state = 'ended';
+    bgm.stop();
     const blueIn = players.filter(p => p.team === TEAM_BLUE && p.alive && p.inField).length;
     const redIn  = players.filter(p => p.team === TEAM_RED  && p.alive && p.inField).length;
     const myTeam = humanPlayer ? humanPlayer.team : TEAM_BLUE;
@@ -1877,12 +1912,73 @@ function applyRemoteInput(p, dt) {
   p._prevCatch = !!input.catch;
 }
 
+/* ── Settings ── */
+const settings = {
+  name: localStorage.getItem('db_name') || 'Player',
+  sensitivity: parseFloat(localStorage.getItem('db_sens') || '1.0'),
+  bgmVol: parseFloat(localStorage.getItem('db_bgm') || '0'),
+  seVol: parseFloat(localStorage.getItem('db_se') || '0.8'),
+  save() {
+    localStorage.setItem('db_name', this.name);
+    localStorage.setItem('db_sens', this.sensitivity);
+    localStorage.setItem('db_bgm', this.bgmVol);
+    localStorage.setItem('db_se', this.seVol);
+  }
+};
+
+function setupSettings() {
+  const nameEl = document.getElementById('set-name');
+  const sensEl = document.getElementById('set-sens');
+  const bgmEl  = document.getElementById('set-bgm');
+  const seEl   = document.getElementById('set-se');
+
+  nameEl.value = settings.name;
+  sensEl.value = settings.sensitivity;
+  bgmEl.value  = settings.bgmVol;
+  seEl.value   = settings.seVol;
+  document.getElementById('set-sens-val').textContent = parseFloat(settings.sensitivity).toFixed(1);
+  document.getElementById('set-bgm-val').textContent  = Math.round(settings.bgmVol * 100) + '%';
+  document.getElementById('set-se-val').textContent   = Math.round(settings.seVol * 100) + '%';
+
+  nameEl.addEventListener('input', () => { settings.name = nameEl.value || 'Player'; settings.save(); });
+  sensEl.addEventListener('input', () => {
+    settings.sensitivity = parseFloat(sensEl.value);
+    document.getElementById('set-sens-val').textContent = settings.sensitivity.toFixed(1);
+    settings.save();
+  });
+  bgmEl.addEventListener('input', () => {
+    settings.bgmVol = parseFloat(bgmEl.value);
+    document.getElementById('set-bgm-val').textContent = Math.round(settings.bgmVol * 100) + '%';
+    if (_bgmMaster) _bgmMaster.gain.value = settings.bgmVol;
+    if (settings.bgmVol > 0) bgm.start(); else bgm.stop();
+    settings.save();
+  });
+  seEl.addEventListener('input', () => {
+    settings.seVol = parseFloat(seEl.value);
+    document.getElementById('set-se-val').textContent = Math.round(settings.seVol * 100) + '%';
+    if (_seMaster) _seMaster.gain.value = settings.seVol;
+    settings.save();
+  });
+}
+
 /* ── Audio ── */
-let _ac = null;
+let _ac = null, _seMaster = null, _bgmMaster = null;
 const getAC = () => {
   if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
   if (_ac.state === 'suspended') _ac.resume();
   return _ac;
+};
+const getSEDest = () => {
+  const ac = getAC();
+  if (!_seMaster) { _seMaster = ac.createGain(); _seMaster.connect(ac.destination); }
+  _seMaster.gain.value = settings.seVol;
+  return _seMaster;
+};
+const getBGMDest = () => {
+  const ac = getAC();
+  if (!_bgmMaster) { _bgmMaster = ac.createGain(); _bgmMaster.connect(ac.destination); }
+  _bgmMaster.gain.value = settings.bgmVol;
+  return _bgmMaster;
 };
 
 const sfx = {
@@ -1894,19 +1990,19 @@ const sfx = {
     const src = ac.createBufferSource(); src.buffer = buf;
     const flt = ac.createBiquadFilter(); flt.type = 'bandpass'; flt.frequency.value = 1200; flt.Q.value = 2;
     const g = ac.createGain(); g.gain.setValueAtTime(0.35, t); g.gain.linearRampToValueAtTime(0, t+0.18);
-    src.connect(flt); flt.connect(g); g.connect(ac.destination); src.start(t);
+    src.connect(flt); flt.connect(g); g.connect(getSEDest()); src.start(t);
   },
   hit() {
     const ac = getAC(), t = ac.currentTime;
     const o = ac.createOscillator(); o.frequency.setValueAtTime(150,t); o.frequency.exponentialRampToValueAtTime(40,t+0.22);
     const g = ac.createGain(); g.gain.setValueAtTime(0.8,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.25);
-    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+0.25);
+    o.connect(g); g.connect(getSEDest()); o.start(t); o.stop(t+0.25);
     const buf = ac.createBuffer(1, ac.sampleRate*0.08, ac.sampleRate);
     const d = buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
     const ns = ac.createBufferSource(); ns.buffer = buf;
     const nf = ac.createBiquadFilter(); nf.type='lowpass'; nf.frequency.value=600;
     const ng = ac.createGain(); ng.gain.setValueAtTime(0.45,t); ng.gain.exponentialRampToValueAtTime(0.001,t+0.08);
-    ns.connect(nf); nf.connect(ng); ng.connect(ac.destination); ns.start(t);
+    ns.connect(nf); nf.connect(ng); ng.connect(getSEDest()); ns.start(t);
   },
   catch() {
     const ac = getAC();
@@ -1914,14 +2010,14 @@ const sfx = {
       const t = ac.currentTime + i*0.08;
       const o = ac.createOscillator(); o.type='sine'; o.frequency.value=f;
       const g = ac.createGain(); g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(0.3,t+0.01); g.gain.exponentialRampToValueAtTime(0.001,t+0.4);
-      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+0.4);
+      o.connect(g); g.connect(getSEDest()); o.start(t); o.stop(t+0.4);
     });
   },
   outfield() {
     const ac = getAC(), t = ac.currentTime;
     const o = ac.createOscillator(); o.frequency.setValueAtTime(200,t); o.frequency.exponentialRampToValueAtTime(55,t+0.35);
     const g = ac.createGain(); g.gain.setValueAtTime(0.65,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.35);
-    o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+0.35);
+    o.connect(g); g.connect(getSEDest()); o.start(t); o.stop(t+0.35);
   },
   countdown(n) {
     const ac = getAC(), t = ac.currentTime;
@@ -1948,13 +2044,13 @@ const sfx = {
       const ns = ac.createBufferSource(); ns.buffer = nb;
       const nf = ac.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=3500; nf.Q.value=15;
       const ng = ac.createGain(); ng.gain.value=0.04;
-      ns.connect(nf); nf.connect(ng); ng.connect(ac.destination); ns.start(t);
+      ns.connect(nf); nf.connect(ng); ng.connect(getSEDest()); ns.start(t);
       osc.start(t); osc.stop(t+dur+0.05);
       pea.start(t); pea.stop(t+dur+0.05);
     } else {
       const o = ac.createOscillator(); o.type='sine'; o.frequency.value = n===1 ? 1100 : 880;
       const g = ac.createGain(); g.gain.setValueAtTime(0.25,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.12);
-      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+0.13);
+      o.connect(g); g.connect(getSEDest()); o.start(t); o.stop(t+0.13);
     }
   },
   win() {
@@ -1964,7 +2060,7 @@ const sfx = {
     notes.forEach((f,i) => {
       const t=ac.currentTime+off; const o=ac.createOscillator(); o.type='square'; o.frequency.value=f;
       const g=ac.createGain(); g.gain.setValueAtTime(0.2,t); g.gain.exponentialRampToValueAtTime(0.001,t+durs[i]+0.05);
-      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+durs[i]+0.1);
+      o.connect(g); g.connect(getSEDest()); o.start(t); o.stop(t+durs[i]+0.1);
       off+=durs[i];
     });
   },
@@ -1975,12 +2071,55 @@ const sfx = {
     notes.forEach((f,i) => {
       const t=ac.currentTime+off; const o=ac.createOscillator(); o.type='sine'; o.frequency.value=f;
       const g=ac.createGain(); g.gain.setValueAtTime(0.25,t); g.gain.exponentialRampToValueAtTime(0.001,t+durs[i]+0.05);
-      o.connect(g); g.connect(ac.destination); o.start(t); o.stop(t+durs[i]+0.1);
+      o.connect(g); g.connect(getSEDest()); o.start(t); o.stop(t+durs[i]+0.1);
       off+=durs[i];
     });
   }
 };
 
+
+const bgm = {
+  _iv: null, _nodes: [], _next: 0,
+  _osc(f, t, dur, vol=0.07, type='square') {
+    const ac=getAC(), o=ac.createOscillator(); o.type=type; o.frequency.value=f;
+    const g=ac.createGain(); g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.01);
+    g.gain.setValueAtTime(vol,t+dur-0.02); g.gain.linearRampToValueAtTime(0,t+dur);
+    o.connect(g); g.connect(getBGMDest()); o.start(t); o.stop(t+dur+0.01); this._nodes.push(o);
+  },
+  _kick(t) {
+    const ac=getAC(), o=ac.createOscillator();
+    o.frequency.setValueAtTime(160,t); o.frequency.exponentialRampToValueAtTime(40,t+0.15);
+    const g=ac.createGain(); g.gain.setValueAtTime(0.45,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.2);
+    o.connect(g); g.connect(getBGMDest()); o.start(t); o.stop(t+0.2); this._nodes.push(o);
+  },
+  _hat(t, vol=0.05) {
+    const ac=getAC(), buf=ac.createBuffer(1,Math.floor(ac.sampleRate*0.05),ac.sampleRate);
+    const d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
+    const s=ac.createBufferSource(); s.buffer=buf;
+    const f=ac.createBiquadFilter(); f.type='highpass'; f.frequency.value=8000;
+    const g=ac.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.05);
+    s.connect(f); f.connect(g); g.connect(getBGMDest()); s.start(t); s.stop(t+0.06); this._nodes.push(s);
+  },
+  _bar(t) {
+    const b=60/132;
+    this._kick(t); this._kick(t+b*2);
+    for(let i=0;i<8;i++) this._hat(t+i*b*0.5, i%2===0?0.06:0.03);
+    [130,98,110,98].forEach((f,i)=>this._osc(f,t+i*b,b*0.85,0.1,'sawtooth'));
+    [392,330,523,440].forEach((f,i)=>this._osc(f,t+i*b,b*0.7,0.055,'square'));
+  },
+  start() {
+    if(this._iv || settings.bgmVol === 0) return;
+    const ac=getAC(); this._next=ac.currentTime+0.1;
+    const barDur=4*(60/132);
+    const tick=()=>{ const ac=getAC(); while(this._next<ac.currentTime+0.6){this._bar(this._next);this._next+=barDur;} };
+    tick(); this._iv=setInterval(tick,100);
+  },
+  stop() {
+    if(this._iv){clearInterval(this._iv);this._iv=null;}
+    this._nodes.forEach(n=>{try{n.stop();n.disconnect();}catch(e){}});
+    this._nodes=[];
+  }
+};
 
 /* ── Network ── */
 const net = {
@@ -2020,8 +2159,8 @@ const net = {
     if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));
   },
 
-  createRoom() { this.send({ type: 'create_room', name: 'Host' }); },
-  joinRoom(key) { this.send({ type: 'join_room', key, name: 'Player' }); },
+  createRoom() { this.send({ type: 'create_room', name: settings.name || 'Host' }); },
+  joinRoom(key) { this.send({ type: 'join_room', key, name: settings.name || 'Player' }); },
 
   getHumanSlots() {
     const slots = [this.mySlot];

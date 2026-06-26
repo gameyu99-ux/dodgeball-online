@@ -66,7 +66,8 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #pause-home{background:linear-gradient(135deg,#555,#333)}
 #msg{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:64px;font-weight:bold;text-shadow:0 0 20px rgba(0,0,0,.8);pointer-events:none;z-index:20;display:none;text-align:center}
 #minimap{position:fixed;top:60px;right:15px;width:140px;height:140px;background:rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.3);border-radius:6px;z-index:10;pointer-events:none}
-#look-area{position:fixed;top:0;left:80px;right:80px;bottom:200px;z-index:5}
+#look-area{position:fixed;top:0;left:80px;right:80px;bottom:200px;z-index:5;touch-action:none}
+@media (orientation:landscape) and (max-height:520px){#look-area{bottom:120px;left:160px;right:160px}}
 #choice-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:90;flex-direction:column}
 #choice-modal.show{display:flex}
 #choice-modal .choice-box{background:rgba(20,20,50,.95);border:2px solid rgba(255,255,255,.3);border-radius:16px;padding:30px 40px;text-align:center;color:#fff}
@@ -921,7 +922,7 @@ lookArea.addEventListener('touchstart', e => {
   const t = e.changedTouches[0];
   touchLook = {active:true, startX:t.clientX, startY:t.clientY, id:t.identifier};
   e.preventDefault();
-});
+}, {passive: false});
 lookArea.addEventListener('touchmove', e => {
   for (const t of e.changedTouches) if (t.identifier === touchLook.id) {
     mouseDX += (t.clientX - touchLook.startX)*0.5;
@@ -929,7 +930,7 @@ lookArea.addEventListener('touchmove', e => {
     touchLook.startX = t.clientX; touchLook.startY = t.clientY;
   }
   e.preventDefault();
-});
+}, {passive: false});
 lookArea.addEventListener('touchend', e => { for (const t of e.changedTouches) if (t.identifier===touchLook.id) touchLook.active=false; });
 lookArea.addEventListener('touchcancel', () => { touchLook.active = false; });
 

@@ -995,16 +995,32 @@ function updateAI(p, dt) {
   if (p.ball) {
     p.aiState = 'has_ball';
     if (p.aiTimer <= 0) {
-      const target = findTarget(p);
-      if (target) {
-        const dir = target.pos.clone().sub(p.pos);
+      // 内野AIかつ人間が外野にいる場合、高確率でプレイヤー近くに投げる
+      const passToHuman = p.inField && humanPlayer && humanPlayer.alive &&
+                          !humanPlayer.inField && humanPlayer.team === p.team &&
+                          Math.random() < 0.8;
+      if (passToHuman) {
+        const aim = humanPlayer.pos.clone();
+        aim.x += (Math.random() - 0.5) * 2.5;
+        aim.z += (Math.random() - 0.5) * 2.5;
+        const dir = aim.sub(p.pos);
         dir.y = 0; dir.normalize();
-        dir.y = Math.random() < 0.5 ? -0.06 + Math.random() * 0.1 : 0.08 + Math.random() * 0.12;
-        dir.x += (Math.random()-0.5) * (1-CFG.AI_ACCURACY) * 0.7;
-        dir.z += (Math.random()-0.5) * (1-CFG.AI_ACCURACY) * 0.7;
+        dir.y = 0.25 + Math.random() * 0.15;
         dir.normalize();
         p.yaw = Math.atan2(-dir.x, -dir.z);
         p.throwBall(dir);
+      } else {
+        const target = findTarget(p);
+        if (target) {
+          const dir = target.pos.clone().sub(p.pos);
+          dir.y = 0; dir.normalize();
+          dir.y = Math.random() < 0.5 ? -0.06 + Math.random() * 0.1 : 0.08 + Math.random() * 0.12;
+          dir.x += (Math.random()-0.5) * (1-CFG.AI_ACCURACY) * 0.7;
+          dir.z += (Math.random()-0.5) * (1-CFG.AI_ACCURACY) * 0.7;
+          dir.normalize();
+          p.yaw = Math.atan2(-dir.x, -dir.z);
+          p.throwBall(dir);
+        }
       }
       p.aiTimer = CFG.AI_THROW_DELAY[0] + Math.random() * (CFG.AI_THROW_DELAY[1] - CFG.AI_THROW_DELAY[0]);
     }

@@ -1206,7 +1206,7 @@ const game = {
 
     document.getElementById('home-btn').addEventListener('click', () => {
       if (this.mode === 'multi') net.disconnect();
-      bgm.stop();
+
       document.getElementById('result').style.display = 'none';
       document.getElementById('menu').style.display = 'flex';
     });
@@ -1215,7 +1215,7 @@ const game = {
     document.getElementById('pause-resume').addEventListener('click', () => this.togglePause());
     document.getElementById('pause-home').addEventListener('click', () => {
       if (this.mode === 'multi') net.disconnect();
-      bgm.stop();
+
       this.closePauseMenu();
       document.getElementById('result').style.display = 'none';
       document.getElementById('menu').style.display = 'flex';
@@ -1291,7 +1291,7 @@ const game = {
     this.state = 'countdown'; this.countdownTimer = 3.5;
     this.showMsg('3', '#fff');
     document.getElementById('pause-btn').style.display = 'block';
-    bgm.start();
+
   },
 
   startMultiplayerGame(mySlot, isHost, humanSlots) {
@@ -1356,7 +1356,7 @@ const game = {
     this.ballMilestones = [90, 180];
 
     document.getElementById('pause-btn').style.display = 'block';
-    bgm.start();
+
     if (isHost) {
       this.state = 'countdown'; this.countdownTimer = 3.5;
       this.showMsg('3', '#fff');
@@ -1950,7 +1950,6 @@ function setupSettings() {
     settings.bgmVol = parseFloat(bgmEl.value);
     document.getElementById('set-bgm-val').textContent = Math.round(settings.bgmVol * 100) + '%';
     if (_bgmMaster) _bgmMaster.gain.value = settings.bgmVol;
-    if (settings.bgmVol > 0) bgm.start(); else bgm.stop();
     settings.save();
   });
   seEl.addEventListener('input', () => {
@@ -2078,48 +2077,6 @@ const sfx = {
 };
 
 
-const bgm = {
-  _iv: null, _nodes: [], _next: 0,
-  _osc(f, t, dur, vol=0.07, type='square') {
-    const ac=getAC(), o=ac.createOscillator(); o.type=type; o.frequency.value=f;
-    const g=ac.createGain(); g.gain.setValueAtTime(0,t); g.gain.linearRampToValueAtTime(vol,t+0.01);
-    g.gain.setValueAtTime(vol,t+dur-0.02); g.gain.linearRampToValueAtTime(0,t+dur);
-    o.connect(g); g.connect(getBGMDest()); o.start(t); o.stop(t+dur+0.01); this._nodes.push(o);
-  },
-  _kick(t) {
-    const ac=getAC(), o=ac.createOscillator();
-    o.frequency.setValueAtTime(160,t); o.frequency.exponentialRampToValueAtTime(40,t+0.15);
-    const g=ac.createGain(); g.gain.setValueAtTime(0.45,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.2);
-    o.connect(g); g.connect(getBGMDest()); o.start(t); o.stop(t+0.2); this._nodes.push(o);
-  },
-  _hat(t, vol=0.05) {
-    const ac=getAC(), buf=ac.createBuffer(1,Math.floor(ac.sampleRate*0.05),ac.sampleRate);
-    const d=buf.getChannelData(0); for(let i=0;i<d.length;i++) d[i]=Math.random()*2-1;
-    const s=ac.createBufferSource(); s.buffer=buf;
-    const f=ac.createBiquadFilter(); f.type='highpass'; f.frequency.value=8000;
-    const g=ac.createGain(); g.gain.setValueAtTime(vol,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.05);
-    s.connect(f); f.connect(g); g.connect(getBGMDest()); s.start(t); s.stop(t+0.06); this._nodes.push(s);
-  },
-  _bar(t) {
-    const b=60/132;
-    this._kick(t); this._kick(t+b*2);
-    for(let i=0;i<8;i++) this._hat(t+i*b*0.5, i%2===0?0.06:0.03);
-    [130,98,110,98].forEach((f,i)=>this._osc(f,t+i*b,b*0.85,0.1,'sawtooth'));
-    [392,330,523,440].forEach((f,i)=>this._osc(f,t+i*b,b*0.7,0.055,'square'));
-  },
-  start() {
-    if(this._iv || settings.bgmVol === 0) return;
-    const ac=getAC(); this._next=ac.currentTime+0.1;
-    const barDur=4*(60/132);
-    const tick=()=>{ const ac=getAC(); while(this._next<ac.currentTime+0.6){this._bar(this._next);this._next+=barDur;} };
-    tick(); this._iv=setInterval(tick,100);
-  },
-  stop() {
-    if(this._iv){clearInterval(this._iv);this._iv=null;}
-    this._nodes.forEach(n=>{try{n.stop();n.disconnect();}catch(e){}});
-    this._nodes=[];
-  }
-};
 
 /* ── Network ── */
 const net = {

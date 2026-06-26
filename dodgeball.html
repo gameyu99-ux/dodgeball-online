@@ -45,7 +45,9 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .act-row{display:flex;gap:8px}
 #ball-status{position:fixed;bottom:180px;right:20px;color:#fff;font-size:13px;background:rgba(0,0,0,.5);padding:6px 12px;border-radius:6px;pointer-events:none;z-index:10}
 #hit-counter{position:fixed;bottom:220px;left:20px;color:#fff;font-size:14px;font-weight:bold;background:rgba(0,0,0,.5);padding:6px 14px;border-radius:6px;pointer-events:none;z-index:10;display:none}
-#menu{position:fixed;inset:0;background:linear-gradient(135deg,#1a1a3e,#2d1b4e);display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#menu{position:fixed;inset:0;background:url('bg.jpg') center/cover no-repeat;display:flex;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#menu::before{content:'';position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:0}
+#menu>*{position:relative;z-index:1}
 #menu h1{font-size:48px;margin-bottom:8px;text-shadow:0 0 30px rgba(255,100,50,.5)}
 #menu p{font-size:15px;opacity:.7;margin-bottom:30px}
 #start-btn{padding:18px 50px;font-size:22px;font-weight:bold;background:linear-gradient(135deg,#e74c3c,#c0392b);color:#fff;border:none;border-radius:12px;cursor:pointer;transition:transform .2s}
@@ -228,7 +230,7 @@ const CFG = {
   MOVE_SPD: 5.5, THROW_SPD: 22, JUMP_V: 7.5, GRAVITY: -18,
   CATCH_PERFECT: [0.5, 7.0],
   CATCH_OK: [7.0, 9.0],
-  AI_THROW_DELAY: [0.3, 0.9],
+  AI_THROW_DELAY: [0.1, 0.4],
   AI_DODGE_CHANCE: 0.6,
   AI_CATCH_CHANCE: 0.25,
   AI_ACCURACY: 0.7,
@@ -945,7 +947,7 @@ function updateAI(p, dt) {
           p.pickUp(incoming);
           if (incoming.thrownBy && incoming.thrownBy.inField) incoming.thrownBy.sendToOutfield();
           incoming.thrownBy = null;
-          p.aiState = 'has_ball'; p.aiTimer = 0.5 + Math.random();
+          p.aiState = 'has_ball'; p.aiTimer = 0.1 + Math.random() * 0.3;
           return;
         }
       }

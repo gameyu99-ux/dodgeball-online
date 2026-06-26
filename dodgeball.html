@@ -636,6 +636,9 @@ class Player {
       if (this.jumping) triggerJumpShotEffect();
       else sfx.throw();
     }
+    if (game.mode === 'multi' && net.isHost) {
+      net.pendingEvents.push({ type: 'sfx', name: 'throw' });
+    }
   }
 
   pickUp(ball) {
@@ -809,8 +812,15 @@ class Ball {
               p.catchImmunity = 0.8;
               if (p.isHuman) sfx.catch();
               game.showMsg('キャッチ！', '#0f0');
+              if (game.mode === 'multi' && net.isHost) {
+                net.pendingEvents.push({ type: 'sfx', name: 'catch' });
+                net.pendingEvents.push({ type: 'msg', text: 'キャッチ！', color: '#0f0' });
+              }
             } else {
               game.showMsg('キャッチ失敗...', '#f44');
+              if (game.mode === 'multi' && net.isHost) {
+                net.pendingEvents.push({ type: 'msg', text: 'キャッチ失敗...', color: '#f44' });
+              }
               this.drop(this.pos);
             }
             return;
@@ -842,17 +852,32 @@ class Ball {
             if (thrower.inField) thrower.sendToOutfield();
             if (p.isHuman) sfx.catch();
             game.showMsg('NICE CATCH!', '#0f0');
+            if (game.mode === 'multi' && net.isHost) {
+              net.pendingEvents.push({ type: 'sfx', name: 'catch' });
+              net.pendingEvents.push({ type: 'msg', text: 'NICE CATCH!', color: '#0f0' });
+            }
             return;
           } else {
             game.showMsg('CATCH FAILED...', '#f44');
+            if (game.mode === 'multi' && net.isHost) {
+              net.pendingEvents.push({ type: 'msg', text: 'CATCH FAILED...', color: '#f44' });
+            }
           }
         }
 
         sfx.hit();
         p.sendToOutfield();
+        if (game.mode === 'multi' && net.isHost) {
+          net.pendingEvents.push({ type: 'sfx', name: 'hit' });
+          net.pendingEvents.push({ type: 'hit', x: +this.pos.x.toFixed(2), y: +this.pos.y.toFixed(2), z: +this.pos.z.toFixed(2) });
+        }
         if (p.isHuman) {
           sfx.outfield();
           game.showMsg('外野へ移動！', '#f80');
+          if (game.mode === 'multi' && net.isHost) {
+            net.pendingEvents.push({ type: 'sfx', name: 'outfield' });
+            net.pendingEvents.push({ type: 'msg', text: '外野へ移動！', color: '#f80' });
+          }
         } else if (thrower.isHuman) {
           game.hitCount++;
           triggerHitEffect(this.pos.clone());
@@ -1459,6 +1484,9 @@ const game = {
     // Client mode: render from received state
     if (this.state === 'playing_client') {
       this.handleInput(dt);
+      if (humanPlayer && humanPlayer.alive && net.lastRecvState && net.lastRecvState.s === 'playing') {
+        humanPlayer.update(dt);
+      }
       if (net.lastRecvState) this.applyNetState(net.lastRecvState);
       this.updateCatchUI();
       this.updateCamera(dt);
@@ -1476,7 +1504,6 @@ const game = {
       else { const el = document.getElementById('msg'); if (el.textContent !== String(n)) { this.showMsg(String(n),'#fff'); sfx.countdown(n); } }
       this.updateCamera(dt);
       this.updateHUD();
-      if (this.mode === 'multi' && net.isHost) net.broadcastState();
       renderer.render(scene, camera);
       return;
     }
@@ -1541,7 +1568,6 @@ const game = {
     const redIn = players.filter(p => p.team === TEAM_RED && p.alive && p.inField).length;
     if (blueIn === 0 || redIn === 0) this.endGame(blueIn > 0 ? TEAM_BLUE : TEAM_RED, false);
 
-    if (this.mode === 'multi' && net.isHost) net.broadcastState();
     renderer.render(scene, camera);
   },
 
@@ -1550,7 +1576,13 @@ const game = {
     for (let i = 0; i < st.p.length && i < players.length; i++) {
       const d = st.p[i], p = players[i];
       if (p.isHuman) {
-        p.pos.set(d[0], d[1], d[2]);
+        if (st.s === 'playing') {
+          p.pos.x += (d[0] - p.pos.x) * 0.3;
+          p.pos.y += (d[1] - p.pos.y) * 0.5;
+          p.pos.z += (d[2] - p.pos.z) * 0.3;
+        } else {
+          p.pos.set(d[0], d[1], d[2]);
+        }
         p.inField = !!d[5]; p.alive = !!d[6];
         p.crouching = !!d[7]; p.height = d[9];
         p.eyeH = p.crouching ? CFG.CROUCH_EYE : CFG.EYE_H;
@@ -1605,22 +1637,37 @@ const game = {
       }
     }
     this.gameTime = st.t;
+    // Countdown handling on client
+    if (st.s === 'countdown') {
+      const n = Math.ceil(st.c);
+      const msgEl = document.getElementById('msg');
+      if (n <= 0 && msgEl.textContent !== 'GO!') {
+        this.showMsg('GO!', '#0f0'); sfx.countdown(0);
+      } else if (n > 0 && msgEl.textContent !== String(n)) {
+        this.showMsg(String(n), '#fff'); sfx.countdown(n);
+      }
+    }
     if (st.s === 'ended' && this.state !== 'ended') {
       this.state = 'ended';
       const blueIn = players.filter(p => p.team === TEAM_BLUE && p.alive && p.inField).length;
       const redIn = players.filter(p => p.team === TEAM_RED && p.alive && p.inField).length;
       const myTeam = humanPlayer.team;
       const won = (blueIn >= redIn && myTeam === TEAM_BLUE) || (redIn > blueIn && myTeam === TEAM_RED);
+      setTimeout(() => won ? sfx.win() : sfx.lose(), 300);
       document.getElementById('result').style.display = 'flex';
       document.getElementById('result-title').textContent = won ? 'WIN!' : 'LOSE...';
       document.getElementById('result-title').style.color = won ? '#4f8' : '#f44';
       document.getElementById('result-desc').textContent = `BLUE ${blueIn}人 vs RED ${redIn}人`;
+      document.getElementById('pause-btn').style.display = 'none';
+      if (pointerLocked) document.exitPointerLock();
     }
-    if (st.ev) {
-      for (const ev of st.ev) {
+    if (net.clientEvents.length > 0) {
+      for (const ev of net.clientEvents) {
         if (ev.type === 'hit') triggerHitEffect(new THREE.Vector3(ev.x, ev.y, ev.z));
         if (ev.type === 'msg') this.showMsg(ev.text, ev.color);
+        if (ev.type === 'sfx' && sfx[ev.name]) sfx[ev.name]();
       }
+      net.clientEvents.length = 0;
     }
   },
 
@@ -1631,9 +1678,6 @@ const game = {
     humanPlayer.pitch -= mouseDY * sens;
     humanPlayer.pitch = THREE.MathUtils.clamp(humanPlayer.pitch, -Math.PI/3, Math.PI/3);
     mouseDX = 0; mouseDY = 0;
-
-    // Client mode: only handle look, send input to host
-    if (this.mode === 'multi' && !net.isHost) return;
 
     const fwd = humanPlayer.getForward();
     const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
@@ -1914,10 +1958,6 @@ function triggerHitEffect(hitPos) {
 
   cameraShake = 0.18;
   spawnHitParticles(hitPos);
-
-  if (game.mode === 'multi' && net.isHost) {
-    net.pendingEvents.push({ type: 'hit', x: +hitPos.x.toFixed(2), y: +hitPos.y.toFixed(2), z: +hitPos.z.toFixed(2) });
-  }
 }
 
 /* ── Remote Input (host applies these) ── */
@@ -2134,6 +2174,7 @@ const net = {
   slotNames: new Map(),
   remoteInputs: {},
   pendingEvents: [],
+  clientEvents: [],
   lastRecvState: null,
   connected: false,
   _broadcastIv: null,
@@ -2227,7 +2268,12 @@ const net = {
         break;
 
       case 'game_state':
-        if (!this.isHost) this.lastRecvState = msg.state;
+        if (!this.isHost) {
+          this.lastRecvState = msg.state;
+          if (msg.state.ev && msg.state.ev.length > 0) {
+            this.clientEvents.push(...msg.state.ev);
+          }
+        }
         break;
 
       case 'choice_request':
@@ -2312,7 +2358,7 @@ const net = {
 
   startBroadcast() {
     this.stopIntervals();
-    this._broadcastIv = setInterval(() => this.broadcastState(), 50);
+    this._broadcastIv = setInterval(() => this.broadcastState(), 33);
   },
 
   startInputSend() {
@@ -2332,6 +2378,7 @@ const net = {
     this.remoteSlots.clear();
     this.remoteInputs = {};
     this.lastRecvState = null;
+    this.clientEvents.length = 0;
     document.getElementById('conn-status').style.display = 'none';
   }
 };

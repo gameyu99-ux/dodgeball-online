@@ -1039,15 +1039,14 @@ function updateAI(p, dt) {
     }
 
     default: {
-      // ボールが出たら即反応（タイマー関係なく毎フレーム確認）
-      const seekBall = findSeekableBall(p);
-      if (seekBall) {
-        p.aiState = 'seeking_ball';
-        p.targetBall = seekBall;
-        p.aiTimer = 5; // タイムアウト付き
-        break;
-      }
       if (p.aiTimer <= 0) {
+        const seekBall = findSeekableBall(p);
+        if (seekBall) {
+          p.aiState = 'seeking_ball';
+          p.targetBall = seekBall;
+          p.aiTimer = 5; // タイムアウト付き
+          break;
+        }
         // ランダム徘徊（外野は内野に入らない目標を選ぶ）
         if (p.inField) {
           const b = p.getBounds();
@@ -1058,7 +1057,7 @@ function updateAI(p, dt) {
         } else {
           p.aiTarget.copy(pickOutfieldTarget(p));
         }
-        p.aiTimer = 1.5 + Math.random() * 2;
+        p.aiTimer = 0.5 + Math.random() * 1.0;
       }
       const toT = p.aiTarget.clone().sub(p.pos); toT.y = 0;
       if (toT.length() > 0.5) {

@@ -66,7 +66,8 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #pause-home{background:linear-gradient(135deg,#555,#333)}
 #msg{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:64px;font-weight:bold;text-shadow:0 0 20px rgba(0,0,0,.8);pointer-events:none;z-index:20;display:none;text-align:center}
 #minimap{position:fixed;top:60px;right:15px;width:140px;height:140px;background:rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.3);border-radius:6px;z-index:10;pointer-events:none}
-#look-area{position:fixed;top:0;left:80px;right:80px;bottom:200px;z-index:5;touch-action:none}
+#look-area{position:fixed;top:0;left:80px;right:80px;bottom:200px;z-index:5}
+@media (orientation:landscape) and (max-height:520px){#look-area{bottom:100px}}
 #choice-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:90;flex-direction:column}
 #choice-modal.show{display:flex}
 #choice-modal .choice-box{background:rgba(20,20,50,.95);border:2px solid rgba(255,255,255,.3);border-radius:16px;padding:30px 40px;text-align:center;color:#fff}

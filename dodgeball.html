@@ -88,6 +88,17 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .mode-btn:hover{transform:scale(1.05)}
 .mode-solo{background:linear-gradient(135deg,#3498db,#2980b9)}
 .mode-multi{background:linear-gradient(135deg,#e74c3c,#c0392b)}
+@media (pointer:coarse) and (max-width:768px){
+  .team-score{font-size:13px;padding:6px 10px}
+  #timer{font-size:19px;padding:5px 16px}
+  #pos-label{font-size:16px;padding:5px 16px}
+  #ball-status{font-size:15px;padding:7px 14px;bottom:210px}
+  #hit-counter{font-size:16px;padding:7px 16px;bottom:250px}
+  .dpad{grid-template-columns:repeat(3,62px);grid-template-rows:repeat(3,62px)}
+  .act-btn{width:72px;height:72px;font-size:13px}
+  #crosshair{width:44px;height:44px}
+  #msg{font-size:56px}
+}
 #settings-panel{margin-top:22px;background:rgba(0,0,0,.38);border-radius:12px;padding:14px 22px;min-width:290px;color:#fff}
 #settings-panel h3{font-size:13px;margin-bottom:10px;opacity:.6;letter-spacing:1px;text-transform:uppercase}
 .set-row{display:flex;align-items:center;margin-bottom:8px;gap:10px}
@@ -302,6 +313,7 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a2e);
 scene.fog = new THREE.FogExp2(0x1a1a2e, 0.012);
 
+const isMobile = () => window.innerWidth <= 768 && ('ontouchstart' in window);
 const camera = new THREE.PerspectiveCamera(78, window.innerWidth/window.innerHeight, 0.1, 140);
 const clock = new THREE.Clock();
 
@@ -316,11 +328,15 @@ scene.add(dirLight);
 scene.add(new THREE.PointLight(0x4488ff, 0.3, 30).translateX(-6).translateY(8));
 scene.add(new THREE.PointLight(0xff4444, 0.3, 30).translateX(6).translateY(8));
 
-window.addEventListener('resize', () => {
+function updateCamera() {
+  camera.fov = isMobile() ? 62 : 78;
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);
-});
+}
+window.addEventListener('resize', updateCamera);
+window.addEventListener('orientationchange', () => setTimeout(updateCamera, 200));
+updateCamera();
 
 /* ── Court ── */
 const courtMeshes = [];

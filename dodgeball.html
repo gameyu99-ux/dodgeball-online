@@ -1072,12 +1072,15 @@ function updateAI(p, dt) {
   if (p.ball) {
     p.aiState = 'has_ball';
     if (p.aiTimer <= 0) {
-      // 内野AIかつ人間が外野にいる場合、高確率でプレイヤー近くに投げる
-      const passToHuman = p.inField && humanPlayer && humanPlayer.alive &&
-                          !humanPlayer.inField && humanPlayer.team === p.team &&
-                          Math.random() < 0.8;
-      if (passToHuman) {
-        const aim = humanPlayer.pos.clone();
+      // 内野AIかつ人間/リモートプレイヤーが外野にいる場合、高確率でパス
+      const outfieldHumans = players.filter(p2 =>
+        (p2.isHuman || p2.isRemote) && p2.alive && !p2.inField && p2.team === p.team
+      );
+      const passTarget = outfieldHumans.length > 0 && Math.random() < 0.8
+        ? outfieldHumans[Math.floor(Math.random() * outfieldHumans.length)]
+        : null;
+      if (p.inField && passTarget) {
+        const aim = passTarget.pos.clone();
         aim.x += (Math.random() - 0.5) * 2.5;
         aim.z += (Math.random() - 0.5) * 2.5;
         const dir = aim.sub(p.pos);

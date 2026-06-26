@@ -1294,11 +1294,11 @@ const game = {
     if (!humanPlayer.isHuman) { humanPlayer.isHuman = true; }
     if (!humanPlayer.mesh.parent) scene.add(humanPlayer.mesh);
 
-    // 自分以外に名前ラベルを付ける（人間=青系、CPU=グレー）
+    // 人間プレイヤーのみ名前ラベルを付ける（自分以外）
     players.forEach(p => {
       if (p.id === mySlot) return;
       const name = net.slotNames.get(p.id);
-      p.setNameLabel(name || 'CPU', !!name);
+      if (name) p.setNameLabel(name, true);
     });
 
     for (let i = CFG.TEAM_SIZE - INITIAL_OUTFIELD; i < CFG.TEAM_SIZE; i++) {

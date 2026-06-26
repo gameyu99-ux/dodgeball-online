@@ -446,6 +446,26 @@ class Player {
     if (!this.isHuman) scene.add(this.mesh);
   }
 
+  setNameLabel(text, isHuman) {
+    if (this.nameLabel) { this.mesh.remove(this.nameLabel); this.nameLabel.material.map.dispose(); this.nameLabel.material.dispose(); this.nameLabel = null; }
+    if (!text) return;
+    const canvas = document.createElement('canvas');
+    canvas.width = 256; canvas.height = 56;
+    const ctx = canvas.getContext('2d');
+    ctx.fillStyle = isHuman ? 'rgba(0,30,80,0.7)' : 'rgba(30,30,30,0.6)';
+    ctx.beginPath(); ctx.roundRect(6, 6, 244, 44, 8); ctx.fill();
+    ctx.font = `bold 26px sans-serif`;
+    ctx.fillStyle = isHuman ? '#88ccff' : '#aaaaaa';
+    ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+    ctx.fillText(text, 128, 30);
+    const mat = new THREE.SpriteMaterial({ map: new THREE.CanvasTexture(canvas), transparent: true, depthTest: false });
+    const sprite = new THREE.Sprite(mat);
+    sprite.scale.set(1.3, 0.28, 1);
+    sprite.position.set(0, 1.9, 0);
+    this.nameLabel = sprite;
+    this.mesh.add(sprite);
+  }
+
   getBounds() {
     const hW = CFG.COURT_W / 2 - 0.3;
     const hL = CFG.COURT_L / 2;
@@ -1274,6 +1294,13 @@ const game = {
     if (!humanPlayer.isHuman) { humanPlayer.isHuman = true; }
     if (!humanPlayer.mesh.parent) scene.add(humanPlayer.mesh);
 
+    // 自分以外に名前ラベルを付ける（人間=青系、CPU=グレー）
+    players.forEach(p => {
+      if (p.id === mySlot) return;
+      const name = net.slotNames.get(p.id);
+      p.setNameLabel(name || 'CPU', !!name);
+    });
+
     for (let i = CFG.TEAM_SIZE - INITIAL_OUTFIELD; i < CFG.TEAM_SIZE; i++) {
       const p = players[i];
       if (!p.isHuman && !p.isRemote) p.sendToOutfield();
@@ -1363,6 +1390,7 @@ const game = {
       this.updateCamera(dt);
       this.updateHUD();
       this.updateMinimap();
+      this.updateNameLabels();
       renderer.render(scene, camera);
       return;
     }
@@ -1433,6 +1461,7 @@ const game = {
     this.updateCamera(dt);
     this.updateHUD();
     this.updateMinimap();
+    this.updateNameLabels();
 
     const blueIn = players.filter(p => p.team === TEAM_BLUE && p.alive && p.inField).length;
     const redIn = players.filter(p => p.team === TEAM_RED && p.alive && p.inField).length;
@@ -1631,6 +1660,13 @@ const game = {
     const hc = document.getElementById('hit-counter');
     hc.style.display = 'block';
     hc.textContent = `命中: ${this.hitCount}`;
+  },
+
+  updateNameLabels() {
+    if (this.mode !== 'multi') return;
+    for (const p of players) {
+      if (p.nameLabel) p.nameLabel.visible = p.alive;
+    }
   },
 
   updateMinimap() {
@@ -1842,6 +1878,7 @@ const net = {
   mySlot: -1,
   roomKey: '',
   remoteSlots: new Set(),
+  slotNames: new Map(),
   remoteInputs: {},
   pendingEvents: [],
   lastRecvState: null,
@@ -1888,6 +1925,8 @@ const net = {
         this.mySlot = msg.slot;
         this.roomKey = msg.key;
         this.remoteSlots.clear();
+        this.slotNames.clear();
+        if (msg.players) msg.players.forEach(p => this.slotNames.set(p.slot, p.name));
         showLobby(msg.key, true, msg.players);
         break;
 
@@ -1896,12 +1935,14 @@ const net = {
         this.mySlot = msg.slot;
         this.roomKey = msg.key;
         this.remoteSlots.clear();
-        if (msg.players) msg.players.forEach(p => { if (p.slot !== this.mySlot) this.remoteSlots.add(p.slot); });
+        this.slotNames.clear();
+        if (msg.players) msg.players.forEach(p => { this.slotNames.set(p.slot, p.name); if (p.slot !== this.mySlot) this.remoteSlots.add(p.slot); });
         showLobby(msg.key, false, msg.players);
         break;
 
       case 'player_joined':
         this.remoteSlots.add(msg.slot);
+        if (msg.players) msg.players.forEach(p => this.slotNames.set(p.slot, p.name));
         updateLobbyPlayers(msg.players);
         break;
 
@@ -1923,6 +1964,7 @@ const net = {
       case 'game_start':
         if (!this.isHost) {
           game.mode = 'multi';
+          if (msg.players) msg.players.forEach(p => this.slotNames.set(p.slot, p.name));
           game.startMultiplayerGame(this.mySlot, false, msg.players.map(p => p.slot));
         }
         break;

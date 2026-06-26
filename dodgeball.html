@@ -55,7 +55,15 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #result{position:fixed;inset:0;background:rgba(0,0,0,.8);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
 #result h2{font-size:48px;margin-bottom:20px}
 #result p{font-size:20px;margin-bottom:30px;opacity:.8}
+#result .result-btns{display:flex;gap:16px;flex-wrap:wrap;justify-content:center}
 #retry-btn{padding:15px 40px;font-size:18px;font-weight:bold;background:linear-gradient(135deg,#3498db,#2980b9);color:#fff;border:none;border-radius:10px;cursor:pointer}
+#home-btn{padding:15px 40px;font-size:18px;font-weight:bold;background:linear-gradient(135deg,#555,#333);color:#fff;border:none;border-radius:10px;cursor:pointer}
+#pause-btn{position:fixed;top:10px;left:10px;z-index:12;background:rgba(0,0,0,.45);border:none;border-radius:8px;color:#fff;font-size:18px;padding:6px 12px;cursor:pointer;pointer-events:auto;display:none}
+#pause-menu{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:90;gap:16px}
+#pause-menu h2{color:#fff;font-size:32px;margin-bottom:10px}
+.pause-btn{padding:14px 44px;font-size:18px;font-weight:bold;border:none;border-radius:10px;cursor:pointer;color:#fff}
+#pause-resume{background:linear-gradient(135deg,#27ae60,#1e8449)}
+#pause-home{background:linear-gradient(135deg,#555,#333)}
 #msg{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:64px;font-weight:bold;text-shadow:0 0 20px rgba(0,0,0,.8);pointer-events:none;z-index:20;display:none;text-align:center}
 #minimap{position:fixed;top:60px;right:15px;width:140px;height:140px;background:rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.3);border-radius:6px;z-index:10;pointer-events:none}
 #look-area{position:fixed;top:0;left:80px;right:80px;bottom:200px;z-index:5}
@@ -204,7 +212,17 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 <div id="result">
   <h2 id="result-title"></h2>
   <p id="result-desc"></p>
-  <button id="retry-btn">RETRY</button>
+  <div class="result-btns">
+    <button id="retry-btn">もう一回</button>
+    <button id="home-btn">ホームに戻る</button>
+  </div>
+</div>
+
+<button id="pause-btn">⏸</button>
+<div id="pause-menu">
+  <h2>一時停止</h2>
+  <button class="pause-btn" id="pause-resume">ゲームに戻る</button>
+  <button class="pause-btn" id="pause-home">ホームに戻る</button>
 </div>
 
 <div id="choice-modal">
@@ -234,7 +252,7 @@ const CFG = {
   MOVE_SPD: 5.5, THROW_SPD: 22, JUMP_V: 7.5, GRAVITY: -18,
   CATCH_PERFECT: [0.5, 7.0],
   CATCH_OK: [7.0, 9.0],
-  AI_THROW_DELAY: [0.1, 0.4],
+  AI_THROW_DELAY: [0.05, 0.15],
   AI_DODGE_CHANCE: 0.6,
   AI_CATCH_CHANCE: 0.25,
   AI_ACCURACY: 0.7,
@@ -785,7 +803,14 @@ const btnState = {up:false, down:false, left:false, right:false};
 // マウスドラッグで視点移動
 let mouseDragging = false, lastMX = 0, lastMY = 0, dragMoved = false;
 
-document.addEventListener('keydown', e => { keys[e.code] = true; e.preventDefault(); });
+document.addEventListener('keydown', e => {
+  if (e.code === 'Escape') {
+    const st = game.state;
+    if (st === 'playing' || st === 'playing_client' || st === 'countdown') game.togglePause();
+    return;
+  }
+  keys[e.code] = true; e.preventDefault();
+});
 document.addEventListener('keyup', e => { keys[e.code] = false; });
 
 document.addEventListener('pointerlockchange', () => { pointerLocked = document.pointerLockElement === canvas; });
@@ -1107,6 +1132,23 @@ const game = {
       }
     });
 
+    document.getElementById('home-btn').addEventListener('click', () => {
+      if (this.mode === 'multi') net.disconnect();
+      document.getElementById('result').style.display = 'none';
+      document.getElementById('menu').style.display = 'flex';
+    });
+
+    document.getElementById('pause-btn').addEventListener('click', () => this.togglePause());
+    document.getElementById('pause-resume').addEventListener('click', () => this.togglePause());
+    document.getElementById('pause-home').addEventListener('click', () => {
+      if (this.mode === 'multi') net.disconnect();
+      this.closePauseMenu();
+      document.getElementById('result').style.display = 'none';
+      document.getElementById('menu').style.display = 'flex';
+      this.state = 'menu';
+      document.getElementById('pause-btn').style.display = 'none';
+    });
+
     setupBtn('btn-jump', () => { if (humanPlayer && humanPlayer.alive) humanPlayer.jump(); });
     setupBtn('btn-crouch',
       () => { if (humanPlayer && humanPlayer.alive) humanPlayer.setCrouch(true); },
@@ -1174,6 +1216,7 @@ const game = {
     this.ballMilestones = [90, 180];
     this.state = 'countdown'; this.countdownTimer = 3.5;
     this.showMsg('3', '#fff');
+    document.getElementById('pause-btn').style.display = 'block';
   },
 
   startMultiplayerGame(mySlot, isHost, humanSlots) {
@@ -1230,6 +1273,7 @@ const game = {
     this.gameTime = 0;
     this.ballMilestones = [90, 180];
 
+    document.getElementById('pause-btn').style.display = 'block';
     if (isHost) {
       this.state = 'countdown'; this.countdownTimer = 3.5;
       this.showMsg('3', '#fff');
@@ -1653,10 +1697,27 @@ const game = {
         ? '勝利！おめでとう！' : '負け...次は勝とう！';
     }
     if (pointerLocked) document.exitPointerLock();
+    document.getElementById('pause-btn').style.display = 'none';
     if (this.mode === 'multi') {
       net.stopIntervals();
       if (net.isHost) net.broadcastState();
     }
+  },
+
+  togglePause() {
+    const pm = document.getElementById('pause-menu');
+    if (pm.style.display === 'flex') {
+      this.closePauseMenu();
+    } else {
+      pm.style.display = 'flex';
+      this.paused = true;
+      if (pointerLocked) document.exitPointerLock();
+    }
+  },
+
+  closePauseMenu() {
+    document.getElementById('pause-menu').style.display = 'none';
+    if (this.state === 'playing' || this.state === 'playing_client') this.paused = false;
   }
 };
 

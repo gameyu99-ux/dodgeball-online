@@ -1000,6 +1000,11 @@ function canPickUp(p, b) {
 }
 
 function findTarget(p) {
+  // 25%の確率でプレイヤーを優先ターゲットに
+  if (humanPlayer && humanPlayer.alive && humanPlayer.inField &&
+      humanPlayer.team !== p.team && Math.random() < 0.25) {
+    return humanPlayer;
+  }
   let best = null, bestD = Infinity;
   for (const t of players) {
     if (!t.alive || t.team === p.team || !t.inField) continue;

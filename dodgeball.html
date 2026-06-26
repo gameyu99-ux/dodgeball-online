@@ -82,6 +82,10 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #hit-flash{position:fixed;inset:0;pointer-events:none;z-index:30;opacity:0;background:radial-gradient(ellipse at center,transparent 30%,rgba(255,120,0,.55) 100%);transition:opacity .06s}
 #hit-flash.active{opacity:1}
 #hit-text{position:fixed;top:38%;left:50%;transform:translate(-50%,-50%) scale(0);pointer-events:none;z-index:31;font-size:80px;font-weight:900;color:#ff6600;text-shadow:0 0 30px rgba(255,100,0,.9),0 0 8px #fff;letter-spacing:4px;transition:none;white-space:nowrap}
+#jump-flash{position:fixed;inset:0;pointer-events:none;z-index:30;opacity:0;background:radial-gradient(ellipse at center,rgba(255,220,0,.25) 0%,transparent 70%);transition:opacity .08s}
+#jump-flash.active{opacity:1}
+#jump-text{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%) scale(0);pointer-events:none;z-index:31;font-size:44px;font-weight:900;color:#ffe033;text-shadow:0 0 20px rgba(255,200,0,.9),0 0 6px #fff;letter-spacing:3px;transition:none;white-space:nowrap}
+@keyframes jumpPop{0%{transform:translate(-50%,-50%) scale(0);opacity:1}35%{transform:translate(-50%,-50%) scale(1.15);opacity:1}65%{transform:translate(-50%,-50%) scale(1);opacity:1}100%{transform:translate(-50%,-50%) scale(1.05);opacity:0}}
 @keyframes hitPop{0%{transform:translate(-50%,-50%) scale(0);opacity:1}40%{transform:translate(-50%,-50%) scale(1.25);opacity:1}70%{transform:translate(-50%,-50%) scale(1);opacity:1}100%{transform:translate(-50%,-50%) scale(1.1);opacity:0}}
 #mode-select{display:flex;gap:20px;margin-bottom:20px}
 .mode-btn{padding:20px 36px;font-size:20px;font-weight:bold;border:none;border-radius:12px;cursor:pointer;color:#fff;transition:transform .2s}
@@ -281,6 +285,8 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 <div id="msg"></div>
 <div id="hit-flash"></div>
 <div id="hit-text">HIT!</div>
+<div id="jump-flash"></div>
+<div id="jump-text">JUMP SHOT!</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 <script>
@@ -626,7 +632,10 @@ class Player {
     lp.add(dir.clone().multiplyScalar(0.5));
     b.launch(lp, dir, this, this.jumping ? 22 : CFG.THROW_SPD);
     this.throwCooldown = 0.3;
-    if (this.isHuman) sfx.throw();
+    if (this.isHuman) {
+      if (this.jumping) triggerJumpShotEffect();
+      else sfx.throw();
+    }
   }
 
   pickUp(ball) {
@@ -1878,6 +1887,18 @@ function updateParticles(dt) {
     p.mesh.material.transparent = true;
     p.mesh.scale.setScalar(t * 1.2);
   }
+}
+
+function triggerJumpShotEffect() {
+  const flash = document.getElementById('jump-flash');
+  flash.classList.add('active');
+  setTimeout(() => flash.classList.remove('active'), 180);
+  const jt = document.getElementById('jump-text');
+  jt.style.animation = 'none';
+  void jt.offsetWidth;
+  jt.style.animation = 'jumpPop 0.75s ease-out forwards';
+  cameraShake = 0.08;
+  sfx.throw();
 }
 
 function triggerHitEffect(hitPos) {

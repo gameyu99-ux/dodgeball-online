@@ -90,8 +90,8 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .mode-multi{background:linear-gradient(135deg,#e74c3c,#c0392b)}
 @media (pointer:coarse) and (max-width:768px){
   .team-score{font-size:13px;padding:6px 10px}
-  #timer{font-size:19px;padding:5px 16px}
-  #pos-label{font-size:16px;padding:5px 16px}
+  #timer{font-size:13px;padding:3px 10px}
+  #pos-label{font-size:11px;padding:3px 10px}
   #ball-status{font-size:15px;padding:7px 14px;bottom:210px}
   #hit-counter{font-size:16px;padding:7px 16px;bottom:250px}
   .dpad{grid-template-columns:repeat(3,62px);grid-template-rows:repeat(3,62px)}
@@ -330,7 +330,7 @@ scene.add(new THREE.PointLight(0x4488ff, 0.3, 30).translateX(-6).translateY(8));
 scene.add(new THREE.PointLight(0xff4444, 0.3, 30).translateX(6).translateY(8));
 
 function updateCamera() {
-  camera.fov = isMobile() ? 62 : 78;
+  camera.fov = isMobile() ? 55 : 78;
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);

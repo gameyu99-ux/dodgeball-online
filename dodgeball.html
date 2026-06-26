@@ -1779,7 +1779,6 @@ const game = {
 
   endGame(winnerTeam, timeUp = false) {
     this.state = 'ended';
-    bgm.stop();
     const blueIn = players.filter(p => p.team === TEAM_BLUE && p.alive && p.inField).length;
     const redIn  = players.filter(p => p.team === TEAM_RED  && p.alive && p.inField).length;
     const myTeam = humanPlayer ? humanPlayer.team : TEAM_BLUE;

@@ -252,7 +252,7 @@ const CFG = {
   MOVE_SPD: 5.5, THROW_SPD: 22, JUMP_V: 7.5, GRAVITY: -18,
   CATCH_PERFECT: [0.4, 8.5],
   CATCH_OK: [8.5, 10.5],
-  AI_THROW_DELAY: [0.6, 1.2],
+  AI_THROW_DELAY: [0.8, 1.6],
   AI_DODGE_CHANCE: 0.6,
   AI_CATCH_CHANCE: 0.25,
   AI_ACCURACY: 0.7,
@@ -1926,11 +1926,20 @@ const sfx = {
   countdown(n) {
     const ac = getAC(), t = ac.currentTime;
     if (n === 0) {
-      [261,329,392,523].forEach((f,i) => {
-        const st = t+i*0.07; const o = ac.createOscillator(); o.type='square'; o.frequency.value=f;
-        const g = ac.createGain(); g.gain.setValueAtTime(0.2,st); g.gain.exponentialRampToValueAtTime(0.001,st+0.35);
-        o.connect(g); g.connect(ac.destination); o.start(st); o.stop(st+0.36);
-      });
+      // ホイッスル音
+      const osc = ac.createOscillator(); osc.type = 'sine';
+      osc.frequency.setValueAtTime(2900, t);
+      osc.frequency.linearRampToValueAtTime(3100, t+0.04);
+      osc.frequency.linearRampToValueAtTime(2700, t+0.55);
+      const lfo = ac.createOscillator(); lfo.frequency.value = 10;
+      const lfoG = ac.createGain(); lfoG.gain.value = 40;
+      lfo.connect(lfoG); lfoG.connect(osc.frequency);
+      const g = ac.createGain();
+      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.45, t+0.03);
+      g.gain.setValueAtTime(0.42, t+0.45); g.gain.linearRampToValueAtTime(0, t+0.6);
+      osc.connect(g); g.connect(ac.destination);
+      osc.start(t); osc.stop(t+0.62);
+      lfo.start(t); lfo.stop(t+0.62);
     } else {
       const o = ac.createOscillator(); o.type='sine'; o.frequency.value = n===1 ? 1100 : 880;
       const g = ac.createGain(); g.gain.setValueAtTime(0.25,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.12);

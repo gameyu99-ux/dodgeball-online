@@ -1926,20 +1926,31 @@ const sfx = {
   countdown(n) {
     const ac = getAC(), t = ac.currentTime;
     if (n === 0) {
-      // ホイッスル音
+      // 笛音：高周波サイン波 + ペア玉の振動（30Hz FM）+ 息のノイズ
+      const dur = 0.65;
       const osc = ac.createOscillator(); osc.type = 'sine';
-      osc.frequency.setValueAtTime(2900, t);
-      osc.frequency.linearRampToValueAtTime(3100, t+0.04);
-      osc.frequency.linearRampToValueAtTime(2700, t+0.55);
-      const lfo = ac.createOscillator(); lfo.frequency.value = 10;
-      const lfoG = ac.createGain(); lfoG.gain.value = 40;
-      lfo.connect(lfoG); lfoG.connect(osc.frequency);
-      const g = ac.createGain();
-      g.gain.setValueAtTime(0, t); g.gain.linearRampToValueAtTime(0.45, t+0.03);
-      g.gain.setValueAtTime(0.42, t+0.45); g.gain.linearRampToValueAtTime(0, t+0.6);
-      osc.connect(g); g.connect(ac.destination);
-      osc.start(t); osc.stop(t+0.62);
-      lfo.start(t); lfo.stop(t+0.62);
+      osc.frequency.setValueAtTime(3200, t);
+      osc.frequency.linearRampToValueAtTime(3600, t+0.04);
+      osc.frequency.setValueAtTime(3600, t+dur-0.06);
+      osc.frequency.linearRampToValueAtTime(3300, t+dur);
+      // ペア玉：周波数変調で「ピリピリ」感
+      const pea = ac.createOscillator(); pea.type = 'sine'; pea.frequency.value = 30;
+      const peaG = ac.createGain(); peaG.gain.value = 70;
+      pea.connect(peaG); peaG.connect(osc.frequency);
+      // エンベロープ
+      const env = ac.createGain();
+      env.gain.setValueAtTime(0,t); env.gain.linearRampToValueAtTime(0.5,t+0.02);
+      env.gain.setValueAtTime(0.5,t+dur-0.05); env.gain.linearRampToValueAtTime(0,t+dur);
+      osc.connect(env); env.connect(ac.destination);
+      // 息のノイズ（薄く）
+      const nb = ac.createBuffer(1, Math.floor(ac.sampleRate*(dur+0.1)), ac.sampleRate);
+      const nd = nb.getChannelData(0); for(let i=0;i<nd.length;i++) nd[i]=Math.random()*2-1;
+      const ns = ac.createBufferSource(); ns.buffer = nb;
+      const nf = ac.createBiquadFilter(); nf.type='bandpass'; nf.frequency.value=3500; nf.Q.value=15;
+      const ng = ac.createGain(); ng.gain.value=0.04;
+      ns.connect(nf); nf.connect(ng); ng.connect(ac.destination); ns.start(t);
+      osc.start(t); osc.stop(t+dur+0.05);
+      pea.start(t); pea.stop(t+dur+0.05);
     } else {
       const o = ac.createOscillator(); o.type='sine'; o.frequency.value = n===1 ? 1100 : 880;
       const g = ac.createGain(); g.gain.setValueAtTime(0.25,t); g.gain.exponentialRampToValueAtTime(0.001,t+0.12);

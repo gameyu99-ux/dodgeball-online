@@ -79,7 +79,9 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .mode-btn:hover{transform:scale(1.05)}
 .mode-solo{background:linear-gradient(135deg,#3498db,#2980b9)}
 .mode-multi{background:linear-gradient(135deg,#e74c3c,#c0392b)}
-#mp-menu{position:fixed;inset:0;background:linear-gradient(135deg,#1a1a3e,#2d1b4e);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#mp-menu{position:fixed;inset:0;background:url('bg.jpg') center/cover no-repeat;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#mp-menu::before{content:'';position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:0}
+#mp-menu>*{position:relative;z-index:1}
 #mp-menu h2{font-size:36px;margin-bottom:20px;text-shadow:0 0 20px rgba(255,60,60,.4)}
 .mp-input{padding:12px 20px;font-size:24px;border:2px solid rgba(255,255,255,.3);border-radius:10px;background:rgba(255,255,255,.1);color:#fff;text-align:center;width:200px;margin:10px;letter-spacing:6px;font-weight:bold}
 .mp-input::placeholder{color:rgba(255,255,255,.3);letter-spacing:2px;font-size:16px}
@@ -90,7 +92,9 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .mp-btn-back{background:rgba(255,255,255,.15);margin-top:20px}
 .mp-or{margin:15px 0;opacity:.5;font-size:14px}
 .mp-error{color:#f44;font-size:14px;margin:10px 0;min-height:20px}
-#lobby{position:fixed;inset:0;background:linear-gradient(135deg,#1a1a3e,#2d1b4e);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#lobby{position:fixed;inset:0;background:url('bg.jpg') center/cover no-repeat;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#lobby::before{content:'';position:absolute;inset:0;background:rgba(0,0,0,.45);z-index:0}
+#lobby>*{position:relative;z-index:1}
 #lobby h2{font-size:32px;margin-bottom:5px}
 .room-key-label{font-size:14px;opacity:.6;margin-top:10px}
 .room-key-display{font-size:52px;font-weight:bold;color:#ff0;letter-spacing:10px;margin:5px 0 15px;text-shadow:0 0 20px rgba(255,255,0,.3)}

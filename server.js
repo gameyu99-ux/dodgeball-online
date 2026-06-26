@@ -45,17 +45,18 @@ class Room {
   }
 
   assignSlot(ws) {
-    const blueCount = this.slots.slice(0, 10).filter(Boolean).length;
-    const redCount = this.slots.slice(10, 20).filter(Boolean).length;
+    // 人間が入れるのは0-7(BLUE内野)と10-17(RED内野)のみ、8-9と18-19はCPU外野固定
+    const blueCount = this.slots.slice(0, 8).filter(Boolean).length;
+    const redCount = this.slots.slice(10, 18).filter(Boolean).length;
     let start, end;
-    if (blueCount <= redCount) { start = 0; end = 10; }
-    else { start = 10; end = 20; }
+    if (blueCount <= redCount) { start = 0; end = 8; }
+    else { start = 10; end = 18; }
     for (let i = start; i < end; i++) {
       if (!this.slots[i]) { this.slots[i] = ws; return i; }
     }
-    for (let i = 0; i < 20; i++) {
-      if (!this.slots[i]) { this.slots[i] = ws; return i; }
-    }
+    // どちらのチームにも空きがない場合、残りのチームを探す
+    for (let i = 0; i < 8; i++) { if (!this.slots[i]) { this.slots[i] = ws; return i; } }
+    for (let i = 10; i < 18; i++) { if (!this.slots[i]) { this.slots[i] = ws; return i; } }
     return -1;
   }
 
@@ -111,7 +112,7 @@ wss.on('connection', (ws) => {
       case 'join_room': {
         const r = rooms.get(msg.key);
         if (!r) { ws.send(JSON.stringify({ type: 'error', message: 'ルームが見つかりません' })); return; }
-        if (r.clients.size >= 20) { ws.send(JSON.stringify({ type: 'error', message: 'ルームが満員です' })); return; }
+        if (r.clients.size >= 16) { ws.send(JSON.stringify({ type: 'error', message: 'ルームが満員です (最大16人)' })); return; }
         if (r.state === 'playing') { ws.send(JSON.stringify({ type: 'error', message: 'ゲーム中です' })); return; }
         room = r;
         mySlot = room.assignSlot(ws);

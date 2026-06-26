@@ -2103,45 +2103,49 @@ function updateLobbyPlayers(playerList) {
 
   const humanSlots = new Set([net.mySlot, ...net.remoteSlots]);
 
-  for (let i = 0; i < 10; i++) {
+  const makeEntry = (slot, label) => {
     const entry = document.createElement('div');
     entry.className = 'player-entry';
-    const inList = playerList && playerList.find(p => p.slot === i);
-    if (i === net.mySlot) {
+    const inList = playerList && playerList.find(p => p.slot === slot);
+    if (slot === net.mySlot) {
       entry.classList.add('me');
-      entry.textContent = `#${i + 1} あなた`;
-    } else if (inList || humanSlots.has(i)) {
+      entry.textContent = `${label} あなた`;
+    } else if (inList || humanSlots.has(slot)) {
       entry.classList.add('remote');
-      entry.textContent = `#${i + 1} ${inList ? inList.name : 'Player'}`;
+      entry.textContent = `${label} ${inList ? inList.name : 'Player'}`;
     } else {
       entry.classList.add('ai');
-      entry.textContent = `#${i + 1} CPU`;
+      entry.textContent = `${label} 空き`;
     }
+    return entry;
+  };
+
+  // BLUE: スロット0-7が人間枠（内野）
+  for (let i = 0; i < 8; i++) bluDiv.appendChild(makeEntry(i, `#${i + 1}`));
+  // BLUE: スロット8-9はCPU外野固定
+  for (let i = 8; i < 10; i++) {
+    const entry = document.createElement('div');
+    entry.className = 'player-entry ai';
+    entry.textContent = `#${i + 1} CPU（外野）`;
     bluDiv.appendChild(entry);
   }
-  for (let i = 10; i < 20; i++) {
+
+  // RED: スロット10-17が人間枠（内野）
+  for (let i = 10; i < 18; i++) redDiv.appendChild(makeEntry(i, `#${i - 9}`));
+  // RED: スロット18-19はCPU外野固定
+  for (let i = 18; i < 20; i++) {
     const entry = document.createElement('div');
-    entry.className = 'player-entry';
-    const inList = playerList && playerList.find(p => p.slot === i);
-    if (i === net.mySlot) {
-      entry.classList.add('me');
-      entry.textContent = `#${i - 9} あなた`;
-    } else if (inList || humanSlots.has(i)) {
-      entry.classList.add('remote');
-      entry.textContent = `#${i - 9} ${inList ? inList.name : 'Player'}`;
-    } else {
-      entry.classList.add('ai');
-      entry.textContent = `#${i - 9} CPU`;
-    }
+    entry.className = 'player-entry ai';
+    entry.textContent = `#${i - 9} CPU（外野）`;
     redDiv.appendChild(entry);
   }
 
   const count = humanSlots.size;
   const statusEl = document.getElementById('lobby-status');
   if (net.isHost) {
-    statusEl.textContent = `${count}/20人参加中 — プレイヤーが集まったら「ゲーム開始」を押してください`;
+    statusEl.textContent = `${count}/16人参加中 — プレイヤーが集まったら「ゲーム開始」を押してください`;
   } else {
-    statusEl.textContent = `${count}/20人参加中 — ホストがゲーム開始するのを待っています...`;
+    statusEl.textContent = `${count}/16人参加中 — ホストがゲーム開始するのを待っています...`;
   }
 }
 

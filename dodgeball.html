@@ -905,6 +905,7 @@ const keys = {};
 let mouseDX = 0, mouseDY = 0, pointerLocked = false;
 let touchLook = {active:false, startX:0, startY:0, id:-1};
 const btnState = {up:false, down:false, left:false, right:false};
+let pendingJump = false; // クライアント→ホストへジャンプ入力を一度だけ伝える
 
 // マウスドラッグで視点移動
 let mouseDragging = false, lastMX = 0, lastMY = 0, dragMoved = false;
@@ -1283,7 +1284,7 @@ const game = {
       document.getElementById('pause-btn').style.display = 'none';
     });
 
-    setupBtn('btn-jump', () => { if (humanPlayer && humanPlayer.alive) humanPlayer.jump(); });
+    setupBtn('btn-jump', () => { if (humanPlayer && humanPlayer.alive) { humanPlayer.jump(); pendingJump = true; } });
     setupBtn('btn-crouch',
       () => { if (humanPlayer && humanPlayer.alive) humanPlayer.setCrouch(true); },
       () => { if (humanPlayer && humanPlayer.alive) humanPlayer.setCrouch(false); }
@@ -1295,7 +1296,7 @@ const game = {
       }
     });
     setupBtn('btn-catch', () => {
-      if (humanPlayer && humanPlayer.alive && this.state === 'playing') {
+      if (humanPlayer && humanPlayer.alive && (this.state === 'playing' || this.state === 'playing_client')) {
         humanPlayer.catchAttempt = true;
         setTimeout(() => { if (humanPlayer) humanPlayer.catchAttempt = false; }, 800);
         if (this.mode === 'multi' && !net.isHost) net.sendAction('catch');
@@ -1487,7 +1488,7 @@ const game = {
       if (humanPlayer && humanPlayer.alive && net.lastRecvState && net.lastRecvState.s === 'playing') {
         humanPlayer.update(dt);
       }
-      if (net.lastRecvState) this.applyNetState(net.lastRecvState);
+      if (net.lastRecvState) this.applyNetState(net.lastRecvState, dt);
       this.updateCatchUI();
       this.updateCamera(dt);
       this.updateHUD();
@@ -1499,7 +1500,7 @@ const game = {
 
     if (this.state === 'countdown') {
       this.countdownTimer -= dt;
-      const n = Math.ceil(this.countdownTimer);
+      const n = Math.min(3, Math.ceil(this.countdownTimer));
       if (n <= 0) { this.state = 'playing'; this.showMsg('GO!', '#0f0'); sfx.countdown(0); }
       else { const el = document.getElementById('msg'); if (el.textContent !== String(n)) { this.showMsg(String(n),'#fff'); sfx.countdown(n); } }
       this.updateCamera(dt);
@@ -1571,25 +1572,39 @@ const game = {
     renderer.render(scene, camera);
   },
 
-  applyNetState(st) {
+  applyNetState(st, dt) {
     if (!st) return;
+    dt = dt || 0.016;
+    const isNew = (net.recvSeq !== net.appliedSeq);
+    net.appliedSeq = net.recvSeq;
+    const playing = (st.s === 'playing');
+
     for (let i = 0; i < st.p.length && i < players.length; i++) {
       const d = st.p[i], p = players[i];
       if (p.isHuman) {
-        if (st.s === 'playing') {
-          p.pos.x += (d[0] - p.pos.x) * 0.3;
-          p.pos.y += (d[1] - p.pos.y) * 0.5;
-          p.pos.z += (d[2] - p.pos.z) * 0.3;
-        } else {
+        // 自分はクライアント権威で動かす。サーバーは離散状態のみ反映。
+        p.alive = !!d[6];
+        const srvInField = !!d[5];
+        const ddx = d[0] - p.pos.x, ddz = d[2] - p.pos.z;
+        const diverged = (ddx*ddx + ddz*ddz) > 9; // 3m以上ズレたら補正
+        if (!playing || p.inField !== srvInField || !p.alive || diverged) {
           p.pos.set(d[0], d[1], d[2]);
         }
-        p.inField = !!d[5]; p.alive = !!d[6];
-        p.crouching = !!d[7]; p.height = d[9];
-        p.eyeH = p.crouching ? CFG.CROUCH_EYE : CFG.EYE_H;
+        p.inField = srvInField;
+        if (!playing) {
+          p.crouching = !!d[7]; p.height = d[9];
+          p.eyeH = p.crouching ? CFG.CROUCH_EYE : CFG.EYE_H;
+        }
         const ballId = d[8];
         p.ball = ballId >= 0 && ballId < balls.length ? balls[ballId] : null;
       } else {
-        p.pos.set(d[0], d[1], d[2]);
+        // 相手・CPUは受信座標へ補間
+        if (isNew) {
+          if (!p.netPos) p.netPos = new THREE.Vector3();
+          p.netPos.set(d[0], d[1], d[2]);
+        }
+        if (!p.netPos) p.netPos = new THREE.Vector3(d[0], d[1], d[2]);
+        p.pos.lerp(p.netPos, 0.35);
         p.yaw = d[3]; p.pitch = d[4];
         p.inField = !!d[5]; p.alive = !!d[6];
         p.crouching = !!d[7]; p.height = d[9];
@@ -1611,20 +1626,37 @@ const game = {
       if (p.hitFlash > 0) { p.bodyMat.emissive.setHex(0xff0000); p.bodyMat.emissiveIntensity = p.hitFlash; }
       else { p.bodyMat.emissive.setHex(0x000000); }
     }
-    // Balls
+    // Balls: 受信時にスナップ、フレーム間は推測航法で滑らかに
     while (balls.length < st.b.length) {
       const nb = new Ball(balls.length); balls.push(nb);
     }
     for (let i = 0; i < st.b.length; i++) {
       const d = st.b[i], b = balls[i];
-      b.pos.set(d[0], d[1], d[2]);
-      b.vel.set(d[3], d[4], d[5]);
-      b.flying = !!d[6];
       const hid = d[7];
-      b.heldBy = hid >= 0 && hid < players.length ? players[hid] : null;
+      const holder = hid >= 0 && hid < players.length ? players[hid] : null;
+      if (isNew) {
+        b.pos.set(d[0], d[1], d[2]);
+        b.vel.set(d[3], d[4], d[5]);
+        b.flying = !!d[6];
+        b.heldBy = holder;
+      } else {
+        b.heldBy = holder;
+        if (holder) {
+          const hp = holder, fwd = hp.getForward();
+          b.pos.set(
+            hp.pos.x + fwd.x*0.5 + Math.sin(hp.yaw+Math.PI/2)*0.3,
+            hp.pos.y + hp.eyeH - 0.2,
+            hp.pos.z + fwd.z*0.5 + Math.cos(hp.yaw+Math.PI/2)*0.3
+          );
+        } else if (b.flying) {
+          b.vel.y += CFG.GRAVITY * 0.4 * dt;
+          b.pos.addScaledVector(b.vel, dt);
+          if (b.pos.y < CFG.BALL_R) b.pos.y = CFG.BALL_R;
+        }
+      }
       b.mesh.position.copy(b.pos);
       b.trail.visible = b.flying && !b.heldBy;
-      if (b.flying && b.heldBy == null) {
+      if (b.flying && !b.heldBy) {
         b.trailPositions.push(b.pos.clone());
         if (b.trailPositions.length > 10) b.trailPositions.shift();
         const arr = b.trail.geometry.attributes.position.array;
@@ -1639,7 +1671,7 @@ const game = {
     this.gameTime = st.t;
     // Countdown handling on client
     if (st.s === 'countdown') {
-      const n = Math.ceil(st.c);
+      const n = Math.min(3, Math.ceil(st.c));
       const msgEl = document.getElementById('msg');
       if (n <= 0 && msgEl.textContent !== 'GO!') {
         this.showMsg('GO!', '#0f0'); sfx.countdown(0);
@@ -1698,7 +1730,11 @@ const game = {
     else if (!document.getElementById('btn-crouch').classList.contains('pressed')) humanPlayer.setCrouch(false);
 
     if (keys['KeyE']) {
-      if (!this._cp) { humanPlayer.catchAttempt = true; this._cp = true; setTimeout(()=>{ if(humanPlayer) humanPlayer.catchAttempt=false; },400); }
+      if (!this._cp) {
+        humanPlayer.catchAttempt = true; this._cp = true;
+        setTimeout(()=>{ if(humanPlayer) humanPlayer.catchAttempt=false; },400);
+        if (this.mode === 'multi' && !net.isHost) net.sendAction('catch');
+      }
     } else { this._cp = false; }
   },
 
@@ -2176,6 +2212,8 @@ const net = {
   pendingEvents: [],
   clientEvents: [],
   lastRecvState: null,
+  recvSeq: 0,
+  appliedSeq: -1,
   connected: false,
   _broadcastIv: null,
   _inputIv: null,
@@ -2270,6 +2308,7 @@ const net = {
       case 'game_state':
         if (!this.isHost) {
           this.lastRecvState = msg.state;
+          this.recvSeq++;
           if (msg.state.ev && msg.state.ev.length > 0) {
             this.clientEvents.push(...msg.state.ev);
           }
@@ -2298,6 +2337,7 @@ const net = {
 
   sendInput() {
     if (!this.connected || this.isHost || !humanPlayer) return;
+    const jmp = !!keys['Space'] || pendingJump; pendingJump = false;
     this.send({
       type: 'input',
       input: {
@@ -2305,7 +2345,7 @@ const net = {
         down: !!(keys['KeyS'] || keys['ArrowDown'] || btnState.down),
         left: !!(keys['KeyA'] || keys['ArrowLeft'] || btnState.left),
         right: !!(keys['KeyD'] || keys['ArrowRight'] || btnState.right),
-        jump: !!keys['Space'],
+        jump: jmp,
         crouch: !!(keys['ShiftLeft'] || keys['ShiftRight'] || keys['KeyC'] || document.getElementById('btn-crouch').classList.contains('pressed')),
         throw: false,
         catch: false,
@@ -2324,7 +2364,7 @@ const net = {
         down: !!(keys['KeyS'] || keys['ArrowDown'] || btnState.down),
         left: !!(keys['KeyA'] || keys['ArrowLeft'] || btnState.left),
         right: !!(keys['KeyD'] || keys['ArrowRight'] || btnState.right),
-        jump: !!keys['Space'],
+        jump: !!keys['Space'] || pendingJump,
         crouch: !!(keys['ShiftLeft'] || keys['ShiftRight'] || keys['KeyC']),
         throw: action === 'throw',
         catch: action === 'catch',

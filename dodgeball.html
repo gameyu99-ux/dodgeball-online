@@ -636,9 +636,6 @@ class Player {
       if (this.jumping) triggerJumpShotEffect();
       else sfx.throw();
     }
-    if (game.mode === 'multi' && net.isHost) {
-      net.pendingEvents.push({ type: 'sfx', name: 'throw' });
-    }
   }
 
   pickUp(ball) {
@@ -812,15 +809,8 @@ class Ball {
               p.catchImmunity = 0.8;
               if (p.isHuman) sfx.catch();
               game.showMsg('キャッチ！', '#0f0');
-              if (game.mode === 'multi' && net.isHost) {
-                net.pendingEvents.push({ type: 'sfx', name: 'catch' });
-                net.pendingEvents.push({ type: 'msg', text: 'キャッチ！', color: '#0f0' });
-              }
             } else {
               game.showMsg('キャッチ失敗...', '#f44');
-              if (game.mode === 'multi' && net.isHost) {
-                net.pendingEvents.push({ type: 'msg', text: 'キャッチ失敗...', color: '#f44' });
-              }
               this.drop(this.pos);
             }
             return;
@@ -852,32 +842,17 @@ class Ball {
             if (thrower.inField) thrower.sendToOutfield();
             if (p.isHuman) sfx.catch();
             game.showMsg('NICE CATCH!', '#0f0');
-            if (game.mode === 'multi' && net.isHost) {
-              net.pendingEvents.push({ type: 'sfx', name: 'catch' });
-              net.pendingEvents.push({ type: 'msg', text: 'NICE CATCH!', color: '#0f0' });
-            }
             return;
           } else {
             game.showMsg('CATCH FAILED...', '#f44');
-            if (game.mode === 'multi' && net.isHost) {
-              net.pendingEvents.push({ type: 'msg', text: 'CATCH FAILED...', color: '#f44' });
-            }
           }
         }
 
         sfx.hit();
         p.sendToOutfield();
-        if (game.mode === 'multi' && net.isHost) {
-          net.pendingEvents.push({ type: 'sfx', name: 'hit' });
-          net.pendingEvents.push({ type: 'hit', x: +this.pos.x.toFixed(2), y: +this.pos.y.toFixed(2), z: +this.pos.z.toFixed(2) });
-        }
         if (p.isHuman) {
           sfx.outfield();
           game.showMsg('外野へ移動！', '#f80');
-          if (game.mode === 'multi' && net.isHost) {
-            net.pendingEvents.push({ type: 'sfx', name: 'outfield' });
-            net.pendingEvents.push({ type: 'msg', text: '外野へ移動！', color: '#f80' });
-          }
         } else if (thrower.isHuman) {
           game.hitCount++;
           triggerHitEffect(this.pos.clone());
@@ -926,7 +901,7 @@ document.addEventListener('pointerlockchange', () => { pointerLocked = document.
 document.addEventListener('mouseup', e => {
   if (mouseDragging && !dragMoved && e.button === 0) {
     if ((game.state === 'playing' || game.state === 'playing_client') && !game.paused && humanPlayer && humanPlayer.alive && humanPlayer.ball) {
-      if (game.mode === 'multi' && !net.isHost) { net.sendAction('throw'); }
+      if (game.mode === 'multi') { net.sendAction('throw'); }
       else { humanPlayer.throwBall(humanPlayer.getLookDir()); }
     }
   }
@@ -1251,8 +1226,6 @@ const game = {
     document.getElementById('btn-start-mp').addEventListener('click', () => {
       if (net.isHost) {
         net.send({ type: 'start_game' });
-        this.mode = 'multi';
-        this.startMultiplayerGame(net.mySlot, true, net.getHumanSlots());
       }
     });
     document.getElementById('retry-btn').addEventListener('click', () => {
@@ -1291,7 +1264,7 @@ const game = {
     );
     setupBtn('btn-throw', () => {
       if (humanPlayer && humanPlayer.alive && humanPlayer.ball) {
-        if (this.mode === 'multi' && !net.isHost) { net.sendAction('throw'); }
+        if (this.mode === 'multi') { net.sendAction('throw'); }
         else { humanPlayer.throwBall(humanPlayer.getLookDir()); }
       }
     });
@@ -1299,16 +1272,16 @@ const game = {
       if (humanPlayer && humanPlayer.alive && (this.state === 'playing' || this.state === 'playing_client')) {
         humanPlayer.catchAttempt = true;
         setTimeout(() => { if (humanPlayer) humanPlayer.catchAttempt = false; }, 800);
-        if (this.mode === 'multi' && !net.isHost) net.sendAction('catch');
+        if (this.mode === 'multi') net.sendAction('catch');
       }
     });
 
     document.getElementById('btn-return').addEventListener('click', () => {
-      if (this.mode === 'multi' && !net.isHost) { net.send({ type: 'choice_result', returnToField: true }); document.getElementById('choice-modal').classList.remove('show'); this.paused = false; }
+      if (this.mode === 'multi') { net.send({ type: 'choice_result', returnToField: true }); document.getElementById('choice-modal').classList.remove('show'); this.paused = false; }
       else this.resolveChoice(true);
     });
     document.getElementById('btn-stay').addEventListener('click', () => {
-      if (this.mode === 'multi' && !net.isHost) { net.send({ type: 'choice_result', returnToField: false }); document.getElementById('choice-modal').classList.remove('show'); this.paused = false; }
+      if (this.mode === 'multi') { net.send({ type: 'choice_result', returnToField: false }); document.getElementById('choice-modal').classList.remove('show'); this.paused = false; }
       else this.resolveChoice(false);
     });
   },
@@ -1355,7 +1328,7 @@ const game = {
 
   },
 
-  startMultiplayerGame(mySlot, isHost, humanSlots) {
+  startMultiplayerGame(mySlot, humanSlots) {
     document.getElementById('lobby').style.display = 'none';
     document.getElementById('menu').style.display = 'none';
     document.getElementById('mp-menu').style.display = 'none';
@@ -1369,12 +1342,10 @@ const game = {
     balls.forEach(b => { scene.remove(b.mesh); scene.remove(b.trail); });
     players.length = 0; balls.length = 0;
 
-    const INITIAL_OUTFIELD = 2;
     for (let i = 0; i < CFG.TEAM_SIZE; i++) {
       const isMe = (i === mySlot);
-      const isRemoteHuman = !isMe && humanSlots.includes(i);
       const p = new Player(i, TEAM_BLUE, isMe);
-      p.isRemote = isRemoteHuman;
+      p.isRemote = !isMe && humanSlots.includes(i);
       p.inField = true;
       p.setStartPos(i);
       players.push(p);
@@ -1382,9 +1353,8 @@ const game = {
     for (let i = 0; i < CFG.TEAM_SIZE; i++) {
       const slot = CFG.TEAM_SIZE + i;
       const isMe = (slot === mySlot);
-      const isRemoteHuman = !isMe && humanSlots.includes(slot);
       const p = new Player(slot, TEAM_RED, isMe);
-      p.isRemote = isRemoteHuman;
+      p.isRemote = !isMe && humanSlots.includes(slot);
       p.inField = true;
       p.setStartPos(i);
       players.push(p);
@@ -1393,21 +1363,11 @@ const game = {
     if (!humanPlayer.isHuman) { humanPlayer.isHuman = true; }
     if (!humanPlayer.mesh.parent) scene.add(humanPlayer.mesh);
 
-    // 人間プレイヤーのみ名前ラベルを付ける（自分以外）
     players.forEach(p => {
       if (p.id === mySlot) return;
       const name = net.slotNames.get(p.id);
       if (name) p.setNameLabel(name, true);
     });
-
-    for (let i = CFG.TEAM_SIZE - INITIAL_OUTFIELD; i < CFG.TEAM_SIZE; i++) {
-      const p = players[i];
-      if (!p.isHuman && !p.isRemote) p.sendToOutfield();
-    }
-    for (let i = CFG.TEAM_SIZE * 2 - INITIAL_OUTFIELD; i < CFG.TEAM_SIZE * 2; i++) {
-      const p = players[i];
-      if (!p.isHuman && !p.isRemote) p.sendToOutfield();
-    }
 
     for (let i = 0; i < CFG.BALL_COUNT; i++) {
       const b = new Ball(i); b.setStart(); balls.push(b);
@@ -1415,22 +1375,14 @@ const game = {
 
     this.gameTime = 0;
     this.ballMilestones = [90, 180];
+    this.state = 'playing_client';
+    net.startInputSend();
 
     document.getElementById('pause-btn').style.display = 'block';
-
-    if (isHost) {
-      this.state = 'countdown'; this.countdownTimer = 3.5;
-      this.showMsg('3', '#fff');
-      net.startBroadcast();
-    } else {
-      this.state = 'playing_client';
-      net.startInputSend();
-    }
-
     const cs = document.getElementById('conn-status');
     cs.style.display = 'block';
-    cs.textContent = isHost ? 'HOST' : 'CLIENT';
-    cs.style.background = isHost ? 'rgba(0,180,0,.6)' : 'rgba(0,100,220,.6)';
+    cs.textContent = 'ONLINE';
+    cs.style.background = 'rgba(0,100,220,.6)';
   },
 
   addExtraBall() {
@@ -1451,14 +1403,7 @@ const game = {
       this._choiceThrower = thrower;
       document.getElementById('choice-modal').classList.add('show');
       if (pointerLocked) document.exitPointerLock();
-    } else if (thrower.isRemote) {
-      if (game.mode === 'multi' && net.isHost) {
-        this.paused = true;
-        this._choiceThrower = thrower;
-        net.send({ type: 'choice_request', targetSlot: thrower.id });
-      }
     } else {
-      // 味方内野の人数が少ないほど高確率で復帰
       const infieldCount = players.filter(p => p.team === thrower.team && p.alive && p.inField).length;
       const returnChance = 0.25 + 0.75 * (1 - infieldCount / CFG.TEAM_SIZE);
       if (Math.random() < returnChance) {
@@ -1512,12 +1457,6 @@ const game = {
     if (this.paused) { this.updateCamera(dt); this.updateHUD(); renderer.render(scene, camera); return; }
 
     this.handleInput(dt);
-    // Apply remote inputs on host
-    if (this.mode === 'multi' && net.isHost) {
-      for (const p of players) {
-        if (p.isRemote && p.alive) applyRemoteInput(p, dt);
-      }
-    }
     for (const p of players) { if (!p.isHuman && !p.isRemote && p.alive) updateAI(p, dt); }
     for (const p of players) p.update(dt);
     for (const b of balls) b.update(dt);
@@ -1695,7 +1634,11 @@ const game = {
     }
     if (net.clientEvents.length > 0) {
       for (const ev of net.clientEvents) {
-        if (ev.type === 'hit') triggerHitEffect(new THREE.Vector3(ev.x, ev.y, ev.z));
+        if (ev.type === 'hit') {
+          triggerHitEffect(new THREE.Vector3(ev.x, ev.y, ev.z));
+          if (humanPlayer && ev.thrower === humanPlayer.id) this.hitCount++;
+        }
+        if (ev.type === 'jumpshot' && humanPlayer && ev.slot === humanPlayer.id) triggerJumpShotEffect();
         if (ev.type === 'msg') this.showMsg(ev.text, ev.color);
         if (ev.type === 'sfx' && sfx[ev.name]) sfx[ev.name]();
       }
@@ -1733,7 +1676,7 @@ const game = {
       if (!this._cp) {
         humanPlayer.catchAttempt = true; this._cp = true;
         setTimeout(()=>{ if(humanPlayer) humanPlayer.catchAttempt=false; },400);
-        if (this.mode === 'multi' && !net.isHost) net.sendAction('catch');
+        if (this.mode === 'multi') net.sendAction('catch');
       }
     } else { this._cp = false; }
   },
@@ -1913,7 +1856,6 @@ const game = {
     document.getElementById('pause-btn').style.display = 'none';
     if (this.mode === 'multi') {
       net.stopIntervals();
-      if (net.isHost) net.broadcastState();
     }
   },
 
@@ -1994,44 +1936,6 @@ function triggerHitEffect(hitPos) {
 
   cameraShake = 0.18;
   spawnHitParticles(hitPos);
-}
-
-/* ── Remote Input (host applies these) ── */
-function applyRemoteInput(p, dt) {
-  const input = net.remoteInputs[p.id];
-  if (!input) return;
-
-  p.yaw = input.yaw;
-  p.pitch = input.pitch;
-
-  const fwd = p.getForward();
-  const right = new THREE.Vector3(-fwd.z, 0, fwd.x);
-  const move = new THREE.Vector3();
-  if (input.up) move.add(fwd);
-  if (input.down) move.sub(fwd);
-  if (input.left) move.sub(right);
-  if (input.right) move.add(right);
-
-  if (move.length() > 0) {
-    move.normalize();
-    const spd = p.crouching ? CFG.MOVE_SPD * 0.5 : CFG.MOVE_SPD;
-    p.vel.x = move.x * spd; p.vel.z = move.z * spd;
-  } else { p.vel.x *= 0.85; p.vel.z *= 0.85; }
-
-  if (input.jump) p.jump();
-  p.setCrouch(!!input.crouch);
-
-  if (input.throw && !p._prevThrow && p.ball) {
-    p.throwBall(p.getLookDir());
-  }
-  p._prevThrow = !!input.throw;
-
-  if (input.catch && !p._prevCatch) {
-    p.catchAttempt = true;
-    clearTimeout(p._catchTimer);
-    p._catchTimer = setTimeout(() => { p.catchAttempt = false; }, 800);
-  }
-  p._prevCatch = !!input.catch;
 }
 
 /* ── Settings ── */
@@ -2208,14 +2112,11 @@ const net = {
   roomKey: '',
   remoteSlots: new Set(),
   slotNames: new Map(),
-  remoteInputs: {},
-  pendingEvents: [],
   clientEvents: [],
   lastRecvState: null,
   recvSeq: 0,
   appliedSeq: -1,
   connected: false,
-  _broadcastIv: null,
   _inputIv: null,
 
   connect(callback) {
@@ -2289,43 +2190,26 @@ const net = {
 
       case 'become_host':
         this.isHost = true;
-        const cs = document.getElementById('conn-status');
-        cs.textContent = 'HOST (引継)'; cs.style.background = 'rgba(180,120,0,.7)';
         break;
 
       case 'game_start':
-        if (!this.isHost) {
-          game.mode = 'multi';
-          if (msg.players) msg.players.forEach(p => this.slotNames.set(p.slot, p.name));
-          game.startMultiplayerGame(this.mySlot, false, msg.players.map(p => p.slot));
-        }
-        break;
-
-      case 'remote_input':
-        if (this.isHost) this.remoteInputs[msg.slot] = msg.input;
+        game.mode = 'multi';
+        if (msg.players) msg.players.forEach(p => this.slotNames.set(p.slot, p.name));
+        game.startMultiplayerGame(this.mySlot, msg.players.map(p => p.slot));
         break;
 
       case 'game_state':
-        if (!this.isHost) {
-          this.lastRecvState = msg.state;
-          this.recvSeq++;
-          if (msg.state.ev && msg.state.ev.length > 0) {
-            this.clientEvents.push(...msg.state.ev);
-          }
+        this.lastRecvState = msg.state;
+        this.recvSeq++;
+        if (msg.state.ev && msg.state.ev.length > 0) {
+          this.clientEvents.push(...msg.state.ev);
         }
         break;
 
       case 'choice_request':
-        if (!this.isHost && game.state === 'playing_client') {
+        if (game.state === 'playing_client') {
           game.paused = true;
-          game._choiceRemote = true;
           document.getElementById('choice-modal').classList.add('show');
-        }
-        break;
-
-      case 'choice_result':
-        if (this.isHost && game._choiceThrower) {
-          game.resolveChoice(msg.returnToField);
         }
         break;
 
@@ -2336,7 +2220,7 @@ const net = {
   },
 
   sendInput() {
-    if (!this.connected || this.isHost || !humanPlayer) return;
+    if (!this.connected || !humanPlayer) return;
     const jmp = !!keys['Space'] || pendingJump; pendingJump = false;
     this.send({
       type: 'input',
@@ -2356,7 +2240,7 @@ const net = {
   },
 
   sendAction(action) {
-    if (!this.connected || this.isHost || !humanPlayer) return;
+    if (!this.connected || !humanPlayer) return;
     this.send({
       type: 'input',
       input: {
@@ -2374,40 +2258,12 @@ const net = {
     });
   },
 
-  broadcastState() {
-    if (!this.connected || !this.isHost) return;
-    const st = {
-      p: players.map(p => [
-        +p.pos.x.toFixed(2), +p.pos.y.toFixed(2), +p.pos.z.toFixed(2),
-        +p.yaw.toFixed(3), +p.pitch.toFixed(3),
-        p.inField ? 1 : 0, p.alive ? 1 : 0, p.crouching ? 1 : 0,
-        p.ball ? p.ball.id : -1, +p.height.toFixed(2), +(p.hitFlash || 0).toFixed(2)
-      ]),
-      b: balls.map(b => [
-        +b.pos.x.toFixed(2), +b.pos.y.toFixed(2), +b.pos.z.toFixed(2),
-        +b.vel.x.toFixed(1), +b.vel.y.toFixed(1), +b.vel.z.toFixed(1),
-        b.flying ? 1 : 0, b.heldBy ? b.heldBy.id : -1
-      ]),
-      t: +game.gameTime.toFixed(1),
-      s: game.state,
-      c: +game.countdownTimer.toFixed(1),
-      ev: this.pendingEvents.splice(0)
-    };
-    this.send({ type: 'game_state', state: st });
-  },
-
-  startBroadcast() {
-    this.stopIntervals();
-    this._broadcastIv = setInterval(() => this.broadcastState(), 33);
-  },
-
   startInputSend() {
     this.stopIntervals();
     this._inputIv = setInterval(() => this.sendInput(), 50);
   },
 
   stopIntervals() {
-    if (this._broadcastIv) { clearInterval(this._broadcastIv); this._broadcastIv = null; }
     if (this._inputIv) { clearInterval(this._inputIv); this._inputIv = null; }
   },
 
@@ -2416,7 +2272,6 @@ const net = {
     if (this.ws) { this.ws.close(); this.ws = null; }
     this.connected = false;
     this.remoteSlots.clear();
-    this.remoteInputs = {};
     this.lastRecvState = null;
     this.clientEvents.length = 0;
     document.getElementById('conn-status').style.display = 'none';

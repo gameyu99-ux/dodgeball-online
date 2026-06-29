@@ -59,11 +59,13 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #retry-btn{padding:15px 40px;font-size:18px;font-weight:bold;background:linear-gradient(135deg,#3498db,#2980b9);color:#fff;border:none;border-radius:10px;cursor:pointer}
 #home-btn{padding:15px 40px;font-size:18px;font-weight:bold;background:linear-gradient(135deg,#555,#333);color:#fff;border:none;border-radius:10px;cursor:pointer}
 #pause-btn{position:fixed;top:10px;left:10px;z-index:12;background:rgba(0,0,0,.45);border:none;border-radius:8px;color:#fff;font-size:18px;padding:6px 12px;cursor:pointer;pointer-events:auto;display:none}
-#pause-menu{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:90;gap:16px}
-#pause-menu h2{color:#fff;font-size:32px;margin-bottom:10px}
+#pause-menu{position:fixed;inset:0;background:rgba(0,0,0,.7);display:none;flex-direction:column;align-items:center;justify-content:center;z-index:90;gap:16px;overflow-y:auto}
+#pause-menu h2{color:#fff;font-size:32px;margin-bottom:4px}
 .pause-btn{padding:14px 44px;font-size:18px;font-weight:bold;border:none;border-radius:10px;cursor:pointer;color:#fff}
 #pause-resume{background:linear-gradient(135deg,#27ae60,#1e8449)}
 #pause-home{background:linear-gradient(135deg,#555,#333)}
+#pause-settings{background:rgba(0,0,0,.4);border-radius:12px;padding:14px 22px;min-width:280px;color:#fff}
+#pause-settings h3{font-size:12px;margin-bottom:10px;opacity:.6;letter-spacing:1px;text-transform:uppercase}
 #msg{position:fixed;top:40%;left:50%;transform:translate(-50%,-50%);color:#fff;font-size:64px;font-weight:bold;text-shadow:0 0 20px rgba(0,0,0,.8);pointer-events:none;z-index:20;display:none;text-align:center}
 #minimap{position:fixed;top:60px;right:15px;width:140px;height:140px;background:rgba(0,0,0,.4);border:2px solid rgba(255,255,255,.3);border-radius:6px;z-index:10;pointer-events:none}
 #look-area{position:fixed;top:0;left:80px;right:80px;bottom:200px;z-index:5}
@@ -268,6 +270,24 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 <div id="pause-menu">
   <h2>一時停止</h2>
   <button class="pause-btn" id="pause-resume">ゲームに戻る</button>
+  <div id="pause-settings">
+    <h3>⚙ 設定</h3>
+    <div class="set-row">
+      <label>感度</label>
+      <input type="range" id="ps-sens" min="0.2" max="5" step="0.1">
+      <span class="set-val" id="ps-sens-val">1.0</span>
+    </div>
+    <div class="set-row">
+      <label>BGM</label>
+      <input type="range" id="ps-bgm" min="0" max="1" step="0.05">
+      <span class="set-val" id="ps-bgm-val">0%</span>
+    </div>
+    <div class="set-row">
+      <label>SE</label>
+      <input type="range" id="ps-se" min="0" max="1" step="0.05">
+      <span class="set-val" id="ps-se-val">80%</span>
+    </div>
+  </div>
   <button class="pause-btn" id="pause-home">ホームに戻る</button>
 </div>
 
@@ -300,7 +320,7 @@ const CFG = {
   MOVE_SPD: 5.5, THROW_SPD: 19, JUMP_V: 7.5, GRAVITY: -18,
   CATCH_PERFECT: [0.4, 8.5],
   CATCH_OK: [8.5, 10.5],
-  AI_THROW_DELAY: [0.8, 1.6],
+  AI_THROW_DELAY: [1.6, 3.0],
   AI_DODGE_CHANCE: 0.6,
   AI_CATCH_CHANCE: 0.25,
   AI_ACCURACY: 0.7,
@@ -1045,7 +1065,10 @@ function findTarget(p) {
 
 function findIncomingBall(p) {
   for (const b of balls) {
-    if (!b.flying || !b.thrownBy || b.thrownBy.team === p.team) continue;
+    if (!b.flying) continue;
+    // ソロ: thrownByで判定、マルチ: throwerTeamで判定
+    const throwerTeam = b.thrownBy != null ? b.thrownBy.team : (b.throwerTeam != null ? b.throwerTeam : -1);
+    if (throwerTeam === -1 || throwerTeam === p.team) continue;
     const toP = p.pos.clone().sub(b.pos);
     if (toP.dot(b.vel.clone().normalize()) > 0 && b.pos.distanceTo(p.pos) < 8) return b;
   }
@@ -1147,15 +1170,20 @@ function updateAI(p, dt) {
     }
 
     default: {
+      if (p._seekDelay > 0) {
+        p._seekDelay -= dt;
+        if (p._seekDelay <= 0 && p._pendingSeekBall && !p._pendingSeekBall.heldBy && !p._pendingSeekBall.flying && ballReachable(p, p._pendingSeekBall)) {
+          p.aiState = 'seeking_ball'; p.targetBall = p._pendingSeekBall; p._pendingSeekBall = null; p.aiTimer = 5;
+        } else if (p._seekDelay <= 0) { p._pendingSeekBall = null; }
+        break;
+      }
       if (p.aiTimer <= 0) {
         const seekBall = findSeekableBall(p);
         if (seekBall) {
-          p.aiState = 'seeking_ball';
-          p.targetBall = seekBall;
-          p.aiTimer = 5; // タイムアウト付き
+          p._pendingSeekBall = seekBall;
+          p._seekDelay = 0.6 + Math.random() * 1.0;
           break;
         }
-        // ランダム徘徊（外野は内野に入らない目標を選ぶ）
         if (p.inField) {
           const b = p.getBounds();
           p.aiTarget.set(
@@ -1577,6 +1605,8 @@ const game = {
       const holder = hid >= 0 && hid < players.length ? players[hid] : null;
       b.heldBy = holder;
       b.flying = !!d[6];
+      if (isNew) b.throwerTeam = d[8] != null ? d[8] : -1;
+      if (!b.flying) b.throwerTeam = -1;
       if (holder) {
         const hp = holder, fwd = hp.getForward();
         b.pos.set(
@@ -1983,6 +2013,41 @@ function setupSettings() {
   });
   seEl.addEventListener('input', () => {
     settings.seVol = parseFloat(seEl.value);
+    document.getElementById('set-se-val').textContent = Math.round(settings.seVol * 100) + '%';
+    if (_seMaster) _seMaster.gain.value = settings.seVol;
+    settings.save();
+  });
+
+  // ポーズメニュー内の設定スライダー（名前以外）
+  const psSens = document.getElementById('ps-sens');
+  const psBgm  = document.getElementById('ps-bgm');
+  const psSe   = document.getElementById('ps-se');
+  psSens.value = settings.sensitivity;
+  psBgm.value  = settings.bgmVol;
+  psSe.value   = settings.seVol;
+  document.getElementById('ps-sens-val').textContent = parseFloat(settings.sensitivity).toFixed(1);
+  document.getElementById('ps-bgm-val').textContent  = Math.round(settings.bgmVol * 100) + '%';
+  document.getElementById('ps-se-val').textContent   = Math.round(settings.seVol * 100) + '%';
+
+  psSens.addEventListener('input', () => {
+    settings.sensitivity = parseFloat(psSens.value);
+    document.getElementById('ps-sens-val').textContent = settings.sensitivity.toFixed(1);
+    sensEl.value = psSens.value;
+    document.getElementById('set-sens-val').textContent = settings.sensitivity.toFixed(1);
+    settings.save();
+  });
+  psBgm.addEventListener('input', () => {
+    settings.bgmVol = parseFloat(psBgm.value);
+    document.getElementById('ps-bgm-val').textContent = Math.round(settings.bgmVol * 100) + '%';
+    bgmEl.value = psBgm.value;
+    document.getElementById('set-bgm-val').textContent = Math.round(settings.bgmVol * 100) + '%';
+    if (_bgmMaster) _bgmMaster.gain.value = settings.bgmVol;
+    settings.save();
+  });
+  psSe.addEventListener('input', () => {
+    settings.seVol = parseFloat(psSe.value);
+    document.getElementById('ps-se-val').textContent = Math.round(settings.seVol * 100) + '%';
+    seEl.value = psSe.value;
     document.getElementById('set-se-val').textContent = Math.round(settings.seVol * 100) + '%';
     if (_seMaster) _seMaster.gain.value = settings.seVol;
     settings.save();

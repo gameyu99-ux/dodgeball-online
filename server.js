@@ -38,7 +38,7 @@ const CFG = {
   MOVE_SPD: 5.5, THROW_SPD: 19, JUMP_V: 7.5, GRAVITY: -18,
   CATCH_PERFECT: [0.4, 8.5],
   CATCH_OK: [8.5, 10.5],
-  AI_THROW_DELAY: [0.8, 1.6],
+  AI_THROW_DELAY: [1.6, 3.0],
   AI_DODGE_CHANCE: 0.6,
   AI_CATCH_CHANCE: 0.25,
   AI_ACCURACY: 0.7,
@@ -551,12 +551,18 @@ function updateAI(p, dt, room) {
     }
 
     default: {
+      if (p._seekDelay > 0) {
+        p._seekDelay -= dt;
+        if (p._seekDelay <= 0 && p._pendingSeekBall && !p._pendingSeekBall.heldBy && !p._pendingSeekBall.flying && ballReachable(p, p._pendingSeekBall)) {
+          p.aiState = 'seeking_ball'; p.targetBall = p._pendingSeekBall; p._pendingSeekBall = null; p.aiTimer = 5;
+        } else if (p._seekDelay <= 0) { p._pendingSeekBall = null; }
+        break;
+      }
       if (p.aiTimer <= 0) {
         const seekBall = findSeekableBall(p, room);
         if (seekBall) {
-          p.aiState = 'seeking_ball';
-          p.targetBall = seekBall;
-          p.aiTimer = 5;
+          p._pendingSeekBall = seekBall;
+          p._seekDelay = 0.6 + Math.random() * 1.0;
           break;
         }
         if (p.inField) {
@@ -869,7 +875,8 @@ class GameRoom {
       b: this.balls.map(b => [
         +b.pos.x.toFixed(2), +b.pos.y.toFixed(2), +b.pos.z.toFixed(2),
         +b.vel.x.toFixed(1), +b.vel.y.toFixed(1), +b.vel.z.toFixed(1),
-        b.flying ? 1 : 0, b.heldBy ? b.heldBy.id : -1
+        b.flying ? 1 : 0, b.heldBy ? b.heldBy.id : -1,
+        b.thrownBy ? b.thrownBy.team : -1
       ]),
       t: +this.gameTime.toFixed(1),
       s: this.gameState,

@@ -716,7 +716,6 @@ class GameRoom {
     }
 
     if (this.gameState !== 'playing') return;
-    if (this.paused) { this.broadcastState(); return; }
 
     // Apply human inputs
     for (const p of this.players) {
@@ -825,10 +824,12 @@ class GameRoom {
 
   onOutfieldHit(thrower) {
     if (thrower.isHuman) {
-      this.paused = true;
       this._choiceThrower = thrower;
       const ws = this.slots[thrower.id];
       if (ws) this.sendTo(ws, { type: 'choice_request' });
+      this._choiceTimeout = setTimeout(() => {
+        if (this._choiceThrower === thrower) this.resolveChoice(false);
+      }, 5000);
     } else {
       const infieldCount = this.players.filter(p => p.team === thrower.team && p.alive && p.inField).length;
       const returnChance = 0.25 + 0.75 * (1 - infieldCount / CFG.TEAM_SIZE);
@@ -837,13 +838,14 @@ class GameRoom {
   }
 
   resolveChoice(returnToField) {
-    this.paused = false;
+    if (this._choiceTimeout) { clearTimeout(this._choiceTimeout); this._choiceTimeout = null; }
     if (this._choiceThrower) {
+      const slot = this._choiceThrower.id;
       if (returnToField) {
         this._choiceThrower.returnToInfield();
-        this.pendingEvents.push({ type: 'msg', text: '内野に復帰！', color: '#0f0' });
+        this.pendingEvents.push({ type: 'msg', text: '内野に復帰！', color: '#0f0', slot });
       } else {
-        this.pendingEvents.push({ type: 'msg', text: '外野に残留', color: '#ff0' });
+        this.pendingEvents.push({ type: 'msg', text: '外野に残留', color: '#ff0', slot });
       }
       this._choiceThrower = null;
     }

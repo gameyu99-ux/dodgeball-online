@@ -880,7 +880,9 @@ const keys = {};
 let mouseDX = 0, mouseDY = 0, pointerLocked = false;
 let touchLook = {active:false, startX:0, startY:0, id:-1};
 const btnState = {up:false, down:false, left:false, right:false};
-let pendingJump = false; // クライアント→ホストへジャンプ入力を一度だけ伝える
+let pendingJump = false;
+let pendingThrow = false;
+let pendingCatch = false;
 
 // マウスドラッグで視点移動
 let mouseDragging = false, lastMX = 0, lastMY = 0, dragMoved = false;
@@ -901,7 +903,7 @@ document.addEventListener('pointerlockchange', () => { pointerLocked = document.
 document.addEventListener('mouseup', e => {
   if (mouseDragging && !dragMoved && e.button === 0) {
     if ((game.state === 'playing' || game.state === 'playing_client') && !game.paused && humanPlayer && humanPlayer.alive && humanPlayer.ball) {
-      if (game.mode === 'multi') { net.sendAction('throw'); }
+      if (game.mode === 'multi') { pendingThrow = true; }
       else { humanPlayer.throwBall(humanPlayer.getLookDir()); }
     }
   }
@@ -1264,7 +1266,7 @@ const game = {
     );
     setupBtn('btn-throw', () => {
       if (humanPlayer && humanPlayer.alive && humanPlayer.ball) {
-        if (this.mode === 'multi') { net.sendAction('throw'); }
+        if (this.mode === 'multi') { pendingThrow = true; }
         else { humanPlayer.throwBall(humanPlayer.getLookDir()); }
       }
     });
@@ -1272,16 +1274,16 @@ const game = {
       if (humanPlayer && humanPlayer.alive && (this.state === 'playing' || this.state === 'playing_client')) {
         humanPlayer.catchAttempt = true;
         setTimeout(() => { if (humanPlayer) humanPlayer.catchAttempt = false; }, 800);
-        if (this.mode === 'multi') net.sendAction('catch');
+        if (this.mode === 'multi') pendingCatch = true;
       }
     });
 
     document.getElementById('btn-return').addEventListener('click', () => {
-      if (this.mode === 'multi') { net.send({ type: 'choice_result', returnToField: true }); document.getElementById('choice-modal').classList.remove('show'); this.paused = false; }
+      if (this.mode === 'multi') { net.send({ type: 'choice_result', returnToField: true }); document.getElementById('choice-modal').classList.remove('show'); }
       else this.resolveChoice(true);
     });
     document.getElementById('btn-stay').addEventListener('click', () => {
-      if (this.mode === 'multi') { net.send({ type: 'choice_result', returnToField: false }); document.getElementById('choice-modal').classList.remove('show'); this.paused = false; }
+      if (this.mode === 'multi') { net.send({ type: 'choice_result', returnToField: false }); document.getElementById('choice-modal').classList.remove('show'); }
       else this.resolveChoice(false);
     });
   },
@@ -1573,25 +1575,22 @@ const game = {
       const d = st.b[i], b = balls[i];
       const hid = d[7];
       const holder = hid >= 0 && hid < players.length ? players[hid] : null;
-      if (isNew) {
+      b.heldBy = holder;
+      b.flying = !!d[6];
+      if (holder) {
+        const hp = holder, fwd = hp.getForward();
+        b.pos.set(
+          hp.pos.x + fwd.x*0.5 + Math.sin(hp.yaw+Math.PI/2)*0.3,
+          hp.pos.y + hp.eyeH - 0.2,
+          hp.pos.z + fwd.z*0.5 + Math.cos(hp.yaw+Math.PI/2)*0.3
+        );
+      } else if (isNew) {
         b.pos.set(d[0], d[1], d[2]);
         b.vel.set(d[3], d[4], d[5]);
-        b.flying = !!d[6];
-        b.heldBy = holder;
-      } else {
-        b.heldBy = holder;
-        if (holder) {
-          const hp = holder, fwd = hp.getForward();
-          b.pos.set(
-            hp.pos.x + fwd.x*0.5 + Math.sin(hp.yaw+Math.PI/2)*0.3,
-            hp.pos.y + hp.eyeH - 0.2,
-            hp.pos.z + fwd.z*0.5 + Math.cos(hp.yaw+Math.PI/2)*0.3
-          );
-        } else if (b.flying) {
-          b.vel.y += CFG.GRAVITY * 0.4 * dt;
-          b.pos.addScaledVector(b.vel, dt);
-          if (b.pos.y < CFG.BALL_R) b.pos.y = CFG.BALL_R;
-        }
+      } else if (b.flying) {
+        b.vel.y += CFG.GRAVITY * 0.4 * dt;
+        b.pos.addScaledVector(b.vel, dt);
+        if (b.pos.y < CFG.BALL_R) b.pos.y = CFG.BALL_R;
       }
       b.mesh.position.copy(b.pos);
       b.trail.visible = b.flying && !b.heldBy;
@@ -1635,11 +1634,15 @@ const game = {
     if (net.clientEvents.length > 0) {
       for (const ev of net.clientEvents) {
         if (ev.type === 'hit') {
-          triggerHitEffect(new THREE.Vector3(ev.x, ev.y, ev.z));
-          if (humanPlayer && ev.thrower === humanPlayer.id) this.hitCount++;
+          if (humanPlayer && ev.thrower === humanPlayer.id) {
+            triggerHitEffect(new THREE.Vector3(ev.x, ev.y, ev.z));
+            this.hitCount++;
+          }
         }
         if (ev.type === 'jumpshot' && humanPlayer && ev.slot === humanPlayer.id) triggerJumpShotEffect();
-        if (ev.type === 'msg') this.showMsg(ev.text, ev.color);
+        if (ev.type === 'msg') {
+          if (ev.slot == null || (humanPlayer && ev.slot === humanPlayer.id)) this.showMsg(ev.text, ev.color);
+        }
         if (ev.type === 'sfx' && sfx[ev.name]) sfx[ev.name]();
       }
       net.clientEvents.length = 0;
@@ -1676,7 +1679,7 @@ const game = {
       if (!this._cp) {
         humanPlayer.catchAttempt = true; this._cp = true;
         setTimeout(()=>{ if(humanPlayer) humanPlayer.catchAttempt=false; },400);
-        if (this.mode === 'multi') net.sendAction('catch');
+        if (this.mode === 'multi') pendingCatch = true;
       }
     } else { this._cp = false; }
   },
@@ -2208,7 +2211,6 @@ const net = {
 
       case 'choice_request':
         if (game.state === 'playing_client') {
-          game.paused = true;
           document.getElementById('choice-modal').classList.add('show');
         }
         break;
@@ -2222,6 +2224,8 @@ const net = {
   sendInput() {
     if (!this.connected || !humanPlayer) return;
     const jmp = !!keys['Space'] || pendingJump; pendingJump = false;
+    const thr = pendingThrow; pendingThrow = false;
+    const cat = pendingCatch; pendingCatch = false;
     this.send({
       type: 'input',
       input: {
@@ -2231,27 +2235,8 @@ const net = {
         right: !!(keys['KeyD'] || keys['ArrowRight'] || btnState.right),
         jump: jmp,
         crouch: !!(keys['ShiftLeft'] || keys['ShiftRight'] || keys['KeyC'] || document.getElementById('btn-crouch').classList.contains('pressed')),
-        throw: false,
-        catch: false,
-        yaw: humanPlayer.yaw,
-        pitch: humanPlayer.pitch
-      }
-    });
-  },
-
-  sendAction(action) {
-    if (!this.connected || !humanPlayer) return;
-    this.send({
-      type: 'input',
-      input: {
-        up: !!(keys['KeyW'] || keys['ArrowUp'] || btnState.up),
-        down: !!(keys['KeyS'] || keys['ArrowDown'] || btnState.down),
-        left: !!(keys['KeyA'] || keys['ArrowLeft'] || btnState.left),
-        right: !!(keys['KeyD'] || keys['ArrowRight'] || btnState.right),
-        jump: !!keys['Space'] || pendingJump,
-        crouch: !!(keys['ShiftLeft'] || keys['ShiftRight'] || keys['KeyC']),
-        throw: action === 'throw',
-        catch: action === 'catch',
+        throw: thr,
+        catch: cat,
         yaw: humanPlayer.yaw,
         pitch: humanPlayer.pitch
       }

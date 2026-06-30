@@ -84,6 +84,7 @@ class ServerPlayer {
     this._prevThrow = false;
     this._prevCatch = false;
     this._catchTimer = null;
+    this.stats = { infieldHits: 0, outfieldHits: 0, infieldTime: 0 };
   }
 
   getBounds() {
@@ -347,6 +348,9 @@ class ServerBall {
           }
         }
 
+        if (thrower.inField) thrower.stats.infieldHits++;
+        else thrower.stats.outfieldHits++;
+
         room.pendingEvents.push({ type: 'sfx', name: 'hit' });
         room.pendingEvents.push({
           type: 'hit',
@@ -609,6 +613,7 @@ class GameRoom {
     this.pendingEvents = [];
     this.inputs = {};            // slot → input object
     this._tickIv = null;
+    this.isRanked = false;
   }
 
   assignSlot(ws) {
@@ -794,6 +799,11 @@ class GameRoom {
       }
     }
 
+    // Track infield survival time for human players
+    for (const p of this.players) {
+      if (p.isHuman && p.alive && p.inField) p.stats.infieldTime += dt;
+    }
+
     // Game timer + milestones
     this.gameTime += dt;
     while (this.ballMilestones.length && this.gameTime >= this.ballMilestones[0]) {
@@ -859,6 +869,21 @@ class GameRoom {
 
   endGame(winnerTeam) {
     this.gameState = 'ended';
+    for (const [ws, info] of this.clients) {
+      const p = this.players.find(pl => pl.id === info.slot);
+      if (p) {
+        this.sendTo(ws, {
+          type: 'game_end_stats',
+          ranked: this.isRanked,
+          won: p.team === winnerTeam,
+          stats: {
+            infieldHits: p.stats.infieldHits,
+            outfieldHits: p.stats.outfieldHits,
+            infieldTime: +p.stats.infieldTime.toFixed(1)
+          }
+        });
+      }
+    }
     this.broadcastState();
     if (this._tickIv) { clearInterval(this._tickIv); this._tickIv = null; }
     this.lobbyState = 'waiting';
@@ -931,62 +956,66 @@ function genKey() {
   return key;
 }
 
-/* ── Matchmaking ── */
-const matchQueue = [];
-let matchTimer = null;
-let matchTimerStart = null;
-let matchBroadcastIv = null;
+/* ── Matchmaking (ranked + casual queues) ── */
 const MATCH_COUNTDOWN_SEC = 60;
 const MATCH_MAX = 16;
+const queues = {
+  casual: { list: [], timer: null, timerStart: null, broadcastIv: null, ranked: false },
+  ranked: { list: [], timer: null, timerStart: null, broadcastIv: null, ranked: true }
+};
 
-function addToMatchQueue(ws, name) {
-  removeFromMatchQueue(ws);
-  ws._matchmaking = true;
-  matchQueue.push({ ws, name });
-  broadcastQueueStatus();
+function addToQueue(queueType, ws, name) {
+  removeFromAnyQueue(ws);
+  const q = queues[queueType];
+  ws._queueType = queueType;
+  q.list.push({ ws, name });
+  broadcastQueueStatus(q);
 
-  if (matchQueue.length >= MATCH_MAX) {
-    startMatch();
-  } else if (!matchTimer) {
-    matchTimerStart = Date.now();
-    matchTimer = setTimeout(() => startMatch(), MATCH_COUNTDOWN_SEC * 1000);
-    if (!matchBroadcastIv) {
-      matchBroadcastIv = setInterval(() => {
-        if (matchQueue.length === 0) {
-          clearInterval(matchBroadcastIv); matchBroadcastIv = null; return;
+  if (q.list.length >= MATCH_MAX) {
+    startQueueMatch(q);
+  } else if (!q.timer) {
+    q.timerStart = Date.now();
+    q.timer = setTimeout(() => startQueueMatch(q), MATCH_COUNTDOWN_SEC * 1000);
+    if (!q.broadcastIv) {
+      q.broadcastIv = setInterval(() => {
+        if (q.list.length === 0) {
+          clearInterval(q.broadcastIv); q.broadcastIv = null; return;
         }
-        broadcastQueueStatus();
+        broadcastQueueStatus(q);
       }, 1000);
     }
   }
 }
 
-function removeFromMatchQueue(ws) {
-  const idx = matchQueue.findIndex(p => p.ws === ws);
-  if (idx !== -1) { matchQueue.splice(idx, 1); ws._matchmaking = false; }
-  if (matchQueue.length === 0 && matchTimer) {
-    clearTimeout(matchTimer); matchTimer = null; matchTimerStart = null;
+function removeFromAnyQueue(ws) {
+  for (const key of ['casual', 'ranked']) {
+    const q = queues[key];
+    const idx = q.list.findIndex(p => p.ws === ws);
+    if (idx !== -1) { q.list.splice(idx, 1); ws._queueType = null; }
+    if (q.list.length === 0 && q.timer) {
+      clearTimeout(q.timer); q.timer = null; q.timerStart = null;
+    }
   }
-  if (matchQueue.length > 0) broadcastQueueStatus();
 }
 
-function broadcastQueueStatus() {
+function broadcastQueueStatus(q) {
   let countdown = -1;
-  if (matchTimer && matchTimerStart) {
-    const elapsed = (Date.now() - matchTimerStart) / 1000;
+  if (q.timer && q.timerStart) {
+    const elapsed = (Date.now() - q.timerStart) / 1000;
     countdown = Math.max(0, Math.ceil(MATCH_COUNTDOWN_SEC - elapsed));
   }
-  const data = JSON.stringify({ type: 'queue_status', count: matchQueue.length, max: MATCH_MAX, countdown });
-  for (const p of matchQueue) { if (p.ws.readyState === 1) p.ws.send(data); }
+  const data = JSON.stringify({ type: 'queue_status', count: q.list.length, max: MATCH_MAX, countdown });
+  for (const p of q.list) { if (p.ws.readyState === 1) p.ws.send(data); }
 }
 
-function startMatch() {
-  if (matchTimer) { clearTimeout(matchTimer); matchTimer = null; matchTimerStart = null; }
-  if (matchQueue.length === 0) return;
+function startQueueMatch(q) {
+  if (q.timer) { clearTimeout(q.timer); q.timer = null; q.timerStart = null; }
+  if (q.list.length === 0) return;
 
-  const matchPlayers = matchQueue.splice(0, MATCH_MAX);
+  const matchPlayers = q.list.splice(0, MATCH_MAX);
   const key = genKey();
   const room = new GameRoom(key);
+  room.isRanked = q.ranked;
   rooms.set(key, room);
   room.hostWs = matchPlayers[0].ws;
 
@@ -994,7 +1023,7 @@ function startMatch() {
     const slot = room.assignSlot(mp.ws);
     mp.ws._room = room;
     mp.ws._slot = slot;
-    mp.ws._matchmaking = false;
+    mp.ws._queueType = null;
     room.clients.set(mp.ws, { slot, name: mp.name });
   }
 
@@ -1007,10 +1036,10 @@ function startMatch() {
     });
   }
 
-  if (matchQueue.length > 0) {
-    matchTimerStart = Date.now();
-    matchTimer = setTimeout(() => startMatch(), MATCH_COUNTDOWN_SEC * 1000);
-    broadcastQueueStatus();
+  if (q.list.length > 0) {
+    q.timerStart = Date.now();
+    q.timer = setTimeout(() => startQueueMatch(q), MATCH_COUNTDOWN_SEC * 1000);
+    broadcastQueueStatus(q);
   }
 }
 
@@ -1019,7 +1048,7 @@ function startMatch() {
 wss.on('connection', (ws) => {
   ws._room = null;
   ws._slot = -1;
-  ws._matchmaking = false;
+  ws._queueType = null;
 
   ws.on('message', (raw) => {
     let msg;
@@ -1081,19 +1110,19 @@ wss.on('connection', (ws) => {
       }
 
       case 'matchmake': {
-        addToMatchQueue(ws, msg.name || 'Player');
+        addToQueue(msg.ranked ? 'ranked' : 'casual', ws, msg.name || 'Player');
         break;
       }
 
       case 'cancel_match': {
-        removeFromMatchQueue(ws);
+        removeFromAnyQueue(ws);
         break;
       }
     }
   });
 
   ws.on('close', () => {
-    if (ws._matchmaking) removeFromMatchQueue(ws);
+    if (ws._queueType) removeFromAnyQueue(ws);
     if (!ws._room) return;
     const wasHost = ws._room.hostWs === ws;
     ws._room.removePlayer(ws);

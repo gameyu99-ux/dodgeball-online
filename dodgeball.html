@@ -159,6 +159,23 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .match-dots span:nth-child(2){animation-delay:.2s}
 .match-dots span:nth-child(3){animation-delay:.4s}
 @keyframes matchDot{0%,80%,100%{opacity:.3}40%{opacity:1}}
+#online-select{position:fixed;inset:0;background:url('bg.jpg') center/cover no-repeat;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#online-select::before{content:'';position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:0}
+#online-select>*{position:relative;z-index:1}
+#online-select h2{font-size:36px;margin-bottom:20px;text-shadow:0 0 20px rgba(255,150,50,.4)}
+#rank-display{background:rgba(0,0,0,.4);border-radius:16px;padding:20px 40px;text-align:center;margin-bottom:25px;border:2px solid rgba(255,255,255,.15);min-width:260px}
+#rank-icon{font-size:48px;margin-bottom:5px}
+#rank-name{font-size:24px;font-weight:bold;margin-bottom:4px}
+#rank-rp{font-size:14px;opacity:.6}
+#rank-progress{width:200px;height:6px;background:rgba(255,255,255,.15);border-radius:3px;margin:8px auto 0}
+#rank-progress-fill{height:100%;border-radius:3px;background:linear-gradient(90deg,#f1c40f,#e67e22);transition:width .3s}
+.online-btns{display:flex;flex-direction:column;gap:14px;margin-bottom:20px;min-width:260px}
+.mode-ranked{background:linear-gradient(135deg,#f1c40f,#e67e22)!important;color:#000!important}
+.mode-casual{background:linear-gradient(135deg,#3498db,#2980b9)!important}
+#rank-result{text-align:center;margin-top:10px;margin-bottom:10px}
+#rank-change-text{font-size:14px;margin-bottom:6px}
+#rank-stats-detail{font-size:12px;opacity:.6;margin-bottom:8px}
+#rank-after{font-size:20px;font-weight:bold}
 </style>
 </head>
 <body>
@@ -273,6 +290,21 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   <button class="mp-btn mp-btn-back" id="btn-lobby-back">退出</button>
 </div>
 
+<div id="online-select">
+  <h2>オンライン対戦</h2>
+  <div id="rank-display">
+    <div id="rank-icon"></div>
+    <div id="rank-name"></div>
+    <div id="rank-rp"></div>
+    <div id="rank-progress"><div id="rank-progress-fill"></div></div>
+  </div>
+  <div class="online-btns">
+    <button class="mode-btn mode-ranked" id="btn-ranked">ランクマッチ</button>
+    <button class="mode-btn mode-casual" id="btn-casual">カジュアルマッチ</button>
+  </div>
+  <button class="mp-btn mp-btn-back" id="btn-online-back">戻る</button>
+</div>
+
 <div id="matchmaking">
   <h2>オンライン対戦</h2>
   <div id="match-status">対戦相手を探しています...</div>
@@ -287,6 +319,11 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 <div id="result">
   <h2 id="result-title"></h2>
   <p id="result-desc"></p>
+  <div id="rank-result" style="display:none">
+    <div id="rank-change-text"></div>
+    <div id="rank-stats-detail"></div>
+    <div id="rank-after"></div>
+  </div>
   <div class="result-btns">
     <button id="retry-btn">もう一回</button>
     <button id="home-btn">ホームに戻る</button>
@@ -1233,6 +1270,50 @@ function updateAI(p, dt) {
   }
 }
 
+/* ── Rank system ── */
+const RANKS = [
+  { name: 'ブロンズ III', icon: '🥉', color: '#cd7f32' },
+  { name: 'ブロンズ II',  icon: '🥉', color: '#cd7f32' },
+  { name: 'ブロンズ I',   icon: '🥉', color: '#cd7f32' },
+  { name: 'シルバー III', icon: '🥈', color: '#c0c0c0' },
+  { name: 'シルバー II',  icon: '🥈', color: '#c0c0c0' },
+  { name: 'シルバー I',   icon: '🥈', color: '#c0c0c0' },
+  { name: 'ゴールド III', icon: '🥇', color: '#ffd700' },
+  { name: 'ゴールド II',  icon: '🥇', color: '#ffd700' },
+  { name: 'ゴールド I',   icon: '🥇', color: '#ffd700' },
+  { name: 'プラチナ III', icon: '💎', color: '#00e5ff' },
+  { name: 'プラチナ II',  icon: '💎', color: '#00e5ff' },
+  { name: 'プラチナ I',   icon: '💎', color: '#00e5ff' },
+];
+const RANK_RP_PER_LEVEL = 100;
+
+function getRankRP() { return parseInt(localStorage.getItem('db_rank_rp') || '0', 10); }
+function setRankRP(rp) { localStorage.setItem('db_rank_rp', String(Math.max(0, rp))); }
+function getRankIndex(rp) { return Math.min(Math.floor(rp / RANK_RP_PER_LEVEL), RANKS.length - 1); }
+function getRankInfo(rp) { return RANKS[getRankIndex(rp)]; }
+
+function calcRPGain(stats, won) {
+  let rp = 0;
+  rp += stats.infieldHits * 15;
+  rp += Math.floor(stats.infieldTime / 15);
+  rp += stats.outfieldHits * 5;
+  rp += won ? 10 : -5;
+  return rp;
+}
+
+function updateRankDisplay() {
+  const rp = getRankRP();
+  const info = getRankInfo(rp);
+  const idx = getRankIndex(rp);
+  document.getElementById('rank-icon').textContent = info.icon;
+  document.getElementById('rank-name').textContent = info.name;
+  document.getElementById('rank-name').style.color = info.color;
+  document.getElementById('rank-rp').textContent = `${rp} RP`;
+  const rpInRank = rp - idx * RANK_RP_PER_LEVEL;
+  const pct = idx >= RANKS.length - 1 ? 100 : Math.floor(rpInRank / RANK_RP_PER_LEVEL * 100);
+  document.getElementById('rank-progress-fill').style.width = pct + '%';
+}
+
 /* ── Game ── */
 let humanPlayer = null;
 
@@ -1246,6 +1327,7 @@ const game = {
   ballMilestones: [90, 180],
   GAME_LIMIT: 270,
   mode: 'solo',
+  ranked: false,
   mySlot: 0,
 
   init() {
@@ -1260,11 +1342,32 @@ const game = {
     });
     document.getElementById('btn-online').addEventListener('click', () => {
       document.getElementById('menu').style.display = 'none';
+      document.getElementById('online-select').style.display = 'flex';
+      updateRankDisplay();
+    });
+    document.getElementById('btn-ranked').addEventListener('click', () => {
+      this.ranked = true;
+      document.getElementById('online-select').style.display = 'none';
       document.getElementById('matchmaking').style.display = 'flex';
+      document.getElementById('matchmaking').querySelector('h2').textContent = 'ランクマッチ';
       document.getElementById('match-count').textContent = '0 / 16';
       document.getElementById('match-countdown').textContent = '';
       document.getElementById('match-status').textContent = '対戦相手を探しています...';
-      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player' }); });
+      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: true }); });
+    });
+    document.getElementById('btn-casual').addEventListener('click', () => {
+      this.ranked = false;
+      document.getElementById('online-select').style.display = 'none';
+      document.getElementById('matchmaking').style.display = 'flex';
+      document.getElementById('matchmaking').querySelector('h2').textContent = 'カジュアルマッチ';
+      document.getElementById('match-count').textContent = '0 / 16';
+      document.getElementById('match-countdown').textContent = '';
+      document.getElementById('match-status').textContent = '対戦相手を探しています...';
+      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: false }); });
+    });
+    document.getElementById('btn-online-back').addEventListener('click', () => {
+      document.getElementById('online-select').style.display = 'none';
+      document.getElementById('menu').style.display = 'flex';
     });
     document.getElementById('btn-match-cancel').addEventListener('click', () => {
       net.send({ type: 'cancel_match' });
@@ -1360,6 +1463,7 @@ const game = {
   startGame() {
     document.getElementById('menu').style.display = 'none';
     document.getElementById('result').style.display = 'none';
+    document.getElementById('rank-result').style.display = 'none';
     document.getElementById('choice-modal').classList.remove('show');
     this.paused = false;
     this.hitCount = 0;
@@ -1405,6 +1509,7 @@ const game = {
     document.getElementById('mp-menu').style.display = 'none';
     document.getElementById('matchmaking').style.display = 'none';
     document.getElementById('result').style.display = 'none';
+    document.getElementById('rank-result').style.display = 'none';
     document.getElementById('choice-modal').classList.remove('show');
     this.paused = false;
     this.hitCount = 0;
@@ -2429,6 +2534,30 @@ const net = {
         document.getElementById('matchmaking').style.display = 'none';
         game.startMultiplayerGame(this.mySlot, msg.players.map(p => p.slot));
         break;
+
+      case 'game_end_stats': {
+        if (msg.ranked) {
+          const oldRP = getRankRP();
+          const rpGain = calcRPGain(msg.stats, msg.won);
+          const newRP = Math.max(0, oldRP + rpGain);
+          setRankRP(newRP);
+          const oldIdx = getRankIndex(oldRP);
+          const newIdx = getRankIndex(newRP);
+          const newRank = getRankInfo(newRP);
+          const rankResult = document.getElementById('rank-result');
+          rankResult.style.display = 'block';
+          const sign = rpGain >= 0 ? '+' : '';
+          document.getElementById('rank-change-text').textContent = `${sign}${rpGain} RP`;
+          document.getElementById('rank-change-text').style.color = rpGain >= 0 ? '#4f8' : '#f44';
+          document.getElementById('rank-stats-detail').textContent =
+            `内野命中:${msg.stats.infieldHits} 生存:${Math.floor(msg.stats.infieldTime)}秒 外野命中:${msg.stats.outfieldHits}`;
+          let afterHTML = `<span style="color:${newRank.color}">${newRank.icon} ${newRank.name}</span> <span style="opacity:.6">(${newRP} RP)</span>`;
+          if (newIdx > oldIdx) afterHTML += '<br><span style="color:#ff0;font-size:20px">ランクアップ！</span>';
+          else if (newIdx < oldIdx) afterHTML += '<br><span style="color:#f44;font-size:16px">ランクダウン...</span>';
+          document.getElementById('rank-after').innerHTML = afterHTML;
+        }
+        break;
+      }
 
       case 'error':
         document.getElementById('mp-error').textContent = msg.message;

@@ -935,7 +935,7 @@ const matchQueue = [];
 let matchTimer = null;
 let matchTimerStart = null;
 let matchBroadcastIv = null;
-const MATCH_COUNTDOWN_SEC = 20;
+const MATCH_COUNTDOWN_SEC = 60;
 const MATCH_MAX = 16;
 
 function addToMatchQueue(ws, name) {

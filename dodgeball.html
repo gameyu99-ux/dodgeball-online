@@ -165,6 +165,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 
 <canvas id="c"></canvas>
 <audio id="menu-bgm" src="bgm-menu.mp3" loop preload="auto"></audio>
+<audio id="game-bgm" src="bgm-game.mp3" loop preload="auto"></audio>
 
 <div id="hud">
   <div class="team-score team-a" id="score-a">BLUE 内:10 外:0</div>
@@ -2153,22 +2154,26 @@ const getBGMDest = () => {
   return _bgmMaster;
 };
 
-/* ── メニューBGM ── */
-let _menuBgmUnlocked = false;
-function unlockMenuBGM() {
-  if (_menuBgmUnlocked) return;
-  _menuBgmUnlocked = true;
+/* ── BGM（メニュー/試合中） ── */
+let _bgmUnlocked = false;
+function unlockBGM() {
+  if (_bgmUnlocked) return;
+  _bgmUnlocked = true;
   try {
-    const el = document.getElementById('menu-bgm');
-    const src = getAC().createMediaElementSource(el);
-    src.connect(getBGMDest());
+    for (const id of ['menu-bgm', 'game-bgm']) {
+      const el = document.getElementById(id);
+      const src = getAC().createMediaElementSource(el);
+      src.connect(getBGMDest());
+    }
   } catch (e) { /* 既に接続済み等は無視 */ }
 }
 ['pointerdown', 'keydown'].forEach(ev => {
   document.addEventListener(ev, () => {
-    unlockMenuBGM();
-    const el = document.getElementById('menu-bgm');
-    if (el.paused && (game.state === 'menu')) el.play().catch(() => {});
+    unlockBGM();
+    const menuEl = document.getElementById('menu-bgm');
+    const gameEl = document.getElementById('game-bgm');
+    if (game.state === 'menu' && menuEl.paused) menuEl.play().catch(() => {});
+    else if (['countdown', 'playing', 'playing_client'].includes(game.state) && gameEl.paused) gameEl.play().catch(() => {});
   }, { once: true });
 });
 
@@ -2529,10 +2534,18 @@ function animate() {
   updateParticles(dt);
   game.update(dt);
   const menuBgm = document.getElementById('menu-bgm');
-  if (game.state === 'menu' || game.state === 'lobby') {
-    if (menuBgm.paused && _menuBgmUnlocked) menuBgm.play().catch(() => {});
+  const gameBgm = document.getElementById('game-bgm');
+  const inMenu = (game.state === 'menu' || game.state === 'lobby');
+  const inMatch = (game.state === 'countdown' || game.state === 'playing' || game.state === 'playing_client');
+  if (inMenu) {
+    if (menuBgm.paused && _bgmUnlocked) menuBgm.play().catch(() => {});
   } else if (!menuBgm.paused) {
     menuBgm.pause();
+  }
+  if (inMatch) {
+    if (gameBgm.paused && _bgmUnlocked) gameBgm.play().catch(() => {});
+  } else if (!gameBgm.paused) {
+    gameBgm.pause();
   }
   if (game.state === 'menu' || game.state === 'lobby') {
     const t = performance.now() * 0.001;

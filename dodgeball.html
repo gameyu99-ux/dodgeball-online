@@ -144,6 +144,19 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #lobby-status{font-size:14px;opacity:.6;margin:8px 0}
 .mp-btn-start{background:linear-gradient(135deg,#e74c3c,#c0392b);font-size:22px;padding:16px 40px;margin-top:10px}
 #conn-status{position:fixed;top:4px;right:10px;color:#fff;font-size:11px;padding:3px 10px;border-radius:8px;pointer-events:none;z-index:112;display:none;background:rgba(0,0,0,.6)}
+.mode-online{background:linear-gradient(135deg,#e67e22,#d35400)}
+#matchmaking{position:fixed;inset:0;background:url('bg.jpg') center/cover no-repeat;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#matchmaking::before{content:'';position:absolute;inset:0;background:rgba(0,0,0,.5);z-index:0}
+#matchmaking>*{position:relative;z-index:1}
+#matchmaking h2{font-size:36px;margin-bottom:10px;text-shadow:0 0 20px rgba(255,150,50,.4)}
+#match-count{font-size:52px;font-weight:bold;color:#ff0;margin:10px 0;letter-spacing:4px;text-shadow:0 0 20px rgba(255,255,0,.3)}
+#match-status{font-size:16px;opacity:.7;margin-bottom:5px}
+#match-countdown{font-size:20px;color:#0f0;margin:8px 0;min-height:28px}
+.match-dots{display:flex;gap:8px;margin:20px 0}
+.match-dots span{width:12px;height:12px;background:#fff;border-radius:50%;animation:matchDot 1.4s infinite;opacity:.3}
+.match-dots span:nth-child(2){animation-delay:.2s}
+.match-dots span:nth-child(3){animation-delay:.4s}
+@keyframes matchDot{0%,80%,100%{opacity:.3}40%{opacity:1}}
 </style>
 </head>
 <body>
@@ -204,7 +217,8 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   <p>一人称視点ドッジボール ─ 10 vs 10（外野あり）</p>
   <div id="mode-select">
     <button class="mode-btn mode-solo" id="btn-solo">ひとりでプレイ</button>
-    <button class="mode-btn mode-multi" id="btn-multi">みんなでプレイ</button>
+    <button class="mode-btn mode-online" id="btn-online">オンラインでプレイ</button>
+    <button class="mode-btn mode-multi" id="btn-multi">ともだちとプレイ</button>
   </div>
   <div id="settings-panel">
     <h3>⚙ 設定</h3>
@@ -253,6 +267,15 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   <div id="lobby-status">プレイヤーを待っています...</div>
   <button class="mp-btn mp-btn-start" id="btn-start-mp" style="display:none">ゲーム開始</button>
   <button class="mp-btn mp-btn-back" id="btn-lobby-back">退出</button>
+</div>
+
+<div id="matchmaking">
+  <h2>オンライン対戦</h2>
+  <div id="match-status">対戦相手を探しています...</div>
+  <div id="match-count">0 / 16</div>
+  <div id="match-countdown"></div>
+  <div class="match-dots"><span></span><span></span><span></span></div>
+  <button class="mp-btn mp-btn-back" id="btn-match-cancel">キャンセル</button>
 </div>
 
 <div id="conn-status"></div>
@@ -923,7 +946,7 @@ document.addEventListener('pointerlockchange', () => { pointerLocked = document.
 document.addEventListener('mouseup', e => {
   if (mouseDragging && !dragMoved && e.button === 0) {
     if ((game.state === 'playing' || game.state === 'playing_client') && !game.paused && humanPlayer && humanPlayer.alive && humanPlayer.ball) {
-      if (game.mode === 'multi') { pendingThrow = true; }
+      if (game.mode === 'multi' || game.mode === 'online') { pendingThrow = true; }
       else { humanPlayer.throwBall(humanPlayer.getLookDir()); }
     }
   }
@@ -1231,6 +1254,20 @@ const game = {
     document.getElementById('btn-solo').addEventListener('click', () => {
       this.mode = 'solo'; this.startGame();
     });
+    document.getElementById('btn-online').addEventListener('click', () => {
+      document.getElementById('menu').style.display = 'none';
+      document.getElementById('matchmaking').style.display = 'flex';
+      document.getElementById('match-count').textContent = '0 / 16';
+      document.getElementById('match-countdown').textContent = '';
+      document.getElementById('match-status').textContent = '対戦相手を探しています...';
+      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player' }); });
+    });
+    document.getElementById('btn-match-cancel').addEventListener('click', () => {
+      net.send({ type: 'cancel_match' });
+      net.disconnect();
+      document.getElementById('matchmaking').style.display = 'none';
+      document.getElementById('menu').style.display = 'flex';
+    });
     document.getElementById('btn-multi').addEventListener('click', () => {
       document.getElementById('menu').style.display = 'none';
       document.getElementById('mp-menu').style.display = 'flex';
@@ -1259,7 +1296,7 @@ const game = {
       }
     });
     document.getElementById('retry-btn').addEventListener('click', () => {
-      if (this.mode === 'multi') {
+      if (this.mode === 'multi' || this.mode === 'online') {
         net.disconnect();
         document.getElementById('result').style.display = 'none';
         document.getElementById('menu').style.display = 'flex';
@@ -1269,7 +1306,7 @@ const game = {
     });
 
     document.getElementById('home-btn').addEventListener('click', () => {
-      if (this.mode === 'multi') net.disconnect();
+      if (this.mode === 'multi' || this.mode === 'online') net.disconnect();
 
       document.getElementById('result').style.display = 'none';
       document.getElementById('menu').style.display = 'flex';
@@ -1278,7 +1315,7 @@ const game = {
     document.getElementById('pause-btn').addEventListener('click', () => this.togglePause());
     document.getElementById('pause-resume').addEventListener('click', () => this.togglePause());
     document.getElementById('pause-home').addEventListener('click', () => {
-      if (this.mode === 'multi') net.disconnect();
+      if (this.mode === 'multi' || this.mode === 'online') net.disconnect();
 
       this.closePauseMenu();
       document.getElementById('result').style.display = 'none';
@@ -1294,7 +1331,7 @@ const game = {
     );
     setupBtn('btn-throw', () => {
       if (humanPlayer && humanPlayer.alive && humanPlayer.ball) {
-        if (this.mode === 'multi') { pendingThrow = true; }
+        if (this.mode === 'multi' || this.mode === 'online') { pendingThrow = true; }
         else { humanPlayer.throwBall(humanPlayer.getLookDir()); }
       }
     });
@@ -1302,16 +1339,16 @@ const game = {
       if (humanPlayer && humanPlayer.alive && (this.state === 'playing' || this.state === 'playing_client')) {
         humanPlayer.catchAttempt = true;
         setTimeout(() => { if (humanPlayer) humanPlayer.catchAttempt = false; }, 800);
-        if (this.mode === 'multi') pendingCatch = true;
+        if (this.mode === 'multi' || this.mode === 'online') pendingCatch = true;
       }
     });
 
     document.getElementById('btn-return').addEventListener('click', () => {
-      if (this.mode === 'multi') { net.send({ type: 'choice_result', returnToField: true }); document.getElementById('choice-modal').classList.remove('show'); }
+      if (this.mode === 'multi' || this.mode === 'online') { net.send({ type: 'choice_result', returnToField: true }); document.getElementById('choice-modal').classList.remove('show'); }
       else this.resolveChoice(true);
     });
     document.getElementById('btn-stay').addEventListener('click', () => {
-      if (this.mode === 'multi') { net.send({ type: 'choice_result', returnToField: false }); document.getElementById('choice-modal').classList.remove('show'); }
+      if (this.mode === 'multi' || this.mode === 'online') { net.send({ type: 'choice_result', returnToField: false }); document.getElementById('choice-modal').classList.remove('show'); }
       else this.resolveChoice(false);
     });
   },
@@ -1362,6 +1399,7 @@ const game = {
     document.getElementById('lobby').style.display = 'none';
     document.getElementById('menu').style.display = 'none';
     document.getElementById('mp-menu').style.display = 'none';
+    document.getElementById('matchmaking').style.display = 'none';
     document.getElementById('result').style.display = 'none';
     document.getElementById('choice-modal').classList.remove('show');
     this.paused = false;
@@ -1741,7 +1779,7 @@ const game = {
       if (!this._cp) {
         humanPlayer.catchAttempt = true; this._cp = true;
         setTimeout(()=>{ if(humanPlayer) humanPlayer.catchAttempt=false; },400);
-        if (this.mode === 'multi') pendingCatch = true;
+        if (this.mode === 'multi' || this.mode === 'online') pendingCatch = true;
       }
     } else { this._cp = false; }
   },
@@ -1825,7 +1863,7 @@ const game = {
   },
 
   updateNameLabels() {
-    if (this.mode !== 'multi') return;
+    if (this.mode !== 'multi' && this.mode !== 'online') return;
     for (const p of players) {
       if (p.nameLabel) p.nameLabel.visible = p.alive;
     }
@@ -1919,7 +1957,7 @@ const game = {
     }
     if (pointerLocked) document.exitPointerLock();
     document.getElementById('pause-btn').style.display = 'none';
-    if (this.mode === 'multi') {
+    if (this.mode === 'multi' || this.mode === 'online') {
       net.stopIntervals();
     }
   },
@@ -2227,6 +2265,10 @@ const net = {
     this.ws.onclose = () => {
       this.connected = false;
       this.stopIntervals();
+      if (document.getElementById('matchmaking').style.display === 'flex') {
+        document.getElementById('matchmaking').style.display = 'none';
+        document.getElementById('menu').style.display = 'flex';
+      }
       const cs = document.getElementById('conn-status');
       cs.textContent = '切断されました'; cs.style.display = 'block'; cs.style.background = 'rgba(200,0,0,.7)';
     };
@@ -2310,6 +2352,31 @@ const net = {
         if (game.state === 'playing_client') {
           document.getElementById('choice-modal').classList.add('show');
         }
+        break;
+
+      case 'queue_status':
+        document.getElementById('match-count').textContent = `${msg.count} / ${msg.max}`;
+        if (msg.countdown >= 0) {
+          document.getElementById('match-countdown').textContent = `開始まで あと ${msg.countdown}秒`;
+          document.getElementById('match-status').textContent = 'まもなく開始！';
+        } else {
+          document.getElementById('match-countdown').textContent = '';
+          document.getElementById('match-status').textContent = '対戦相手を探しています...';
+        }
+        break;
+
+      case 'match_found':
+        this.mySlot = msg.slot;
+        this.roomKey = msg.key;
+        this.remoteSlots.clear();
+        this.slotNames.clear();
+        if (msg.players) msg.players.forEach(p => {
+          this.slotNames.set(p.slot, p.name);
+          if (p.slot !== this.mySlot) this.remoteSlots.add(p.slot);
+        });
+        game.mode = 'online';
+        document.getElementById('matchmaking').style.display = 'none';
+        game.startMultiplayerGame(this.mySlot, msg.players.map(p => p.slot));
         break;
 
       case 'error':

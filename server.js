@@ -930,9 +930,95 @@ function genKey() {
   return key;
 }
 
+/* ── Matchmaking ── */
+const matchQueue = [];
+let matchTimer = null;
+let matchTimerStart = null;
+let matchBroadcastIv = null;
+const MATCH_COUNTDOWN_SEC = 20;
+const MATCH_MAX = 16;
+
+function addToMatchQueue(ws, name) {
+  removeFromMatchQueue(ws);
+  ws._matchmaking = true;
+  matchQueue.push({ ws, name });
+  broadcastQueueStatus();
+
+  if (matchQueue.length >= MATCH_MAX) {
+    startMatch();
+  } else if (!matchTimer) {
+    matchTimerStart = Date.now();
+    matchTimer = setTimeout(() => startMatch(), MATCH_COUNTDOWN_SEC * 1000);
+    if (!matchBroadcastIv) {
+      matchBroadcastIv = setInterval(() => {
+        if (matchQueue.length === 0) {
+          clearInterval(matchBroadcastIv); matchBroadcastIv = null; return;
+        }
+        broadcastQueueStatus();
+      }, 1000);
+    }
+  }
+}
+
+function removeFromMatchQueue(ws) {
+  const idx = matchQueue.findIndex(p => p.ws === ws);
+  if (idx !== -1) { matchQueue.splice(idx, 1); ws._matchmaking = false; }
+  if (matchQueue.length === 0 && matchTimer) {
+    clearTimeout(matchTimer); matchTimer = null; matchTimerStart = null;
+  }
+  if (matchQueue.length > 0) broadcastQueueStatus();
+}
+
+function broadcastQueueStatus() {
+  let countdown = -1;
+  if (matchTimer && matchTimerStart) {
+    const elapsed = (Date.now() - matchTimerStart) / 1000;
+    countdown = Math.max(0, Math.ceil(MATCH_COUNTDOWN_SEC - elapsed));
+  }
+  const data = JSON.stringify({ type: 'queue_status', count: matchQueue.length, max: MATCH_MAX, countdown });
+  for (const p of matchQueue) { if (p.ws.readyState === 1) p.ws.send(data); }
+}
+
+function startMatch() {
+  if (matchTimer) { clearTimeout(matchTimer); matchTimer = null; matchTimerStart = null; }
+  if (matchQueue.length === 0) return;
+
+  const matchPlayers = matchQueue.splice(0, MATCH_MAX);
+  const key = genKey();
+  const room = new GameRoom(key);
+  rooms.set(key, room);
+  room.hostWs = matchPlayers[0].ws;
+
+  for (const mp of matchPlayers) {
+    const slot = room.assignSlot(mp.ws);
+    mp.ws._room = room;
+    mp.ws._slot = slot;
+    mp.ws._matchmaking = false;
+    room.clients.set(mp.ws, { slot, name: mp.name });
+  }
+
+  room.startGame();
+
+  for (const [ws, info] of room.clients) {
+    room.sendTo(ws, {
+      type: 'match_found', key, slot: info.slot,
+      players: room.getSlotList()
+    });
+  }
+
+  if (matchQueue.length > 0) {
+    matchTimerStart = Date.now();
+    matchTimer = setTimeout(() => startMatch(), MATCH_COUNTDOWN_SEC * 1000);
+    broadcastQueueStatus();
+  }
+}
+
+/* ── Connection handling ── */
+
 wss.on('connection', (ws) => {
-  let room = null;
-  let mySlot = -1;
+  ws._room = null;
+  ws._slot = -1;
+  ws._matchmaking = false;
 
   ws.on('message', (raw) => {
     let msg;
@@ -941,14 +1027,14 @@ wss.on('connection', (ws) => {
     switch (msg.type) {
       case 'create_room': {
         const key = genKey();
-        room = new GameRoom(key);
-        rooms.set(key, room);
-        room.hostWs = ws;
-        mySlot = room.assignSlot(ws);
-        room.clients.set(ws, { slot: mySlot, name: msg.name || 'Host' });
-        room.sendTo(ws, {
-          type: 'room_created', key, slot: mySlot, isHost: true,
-          players: room.getSlotList()
+        ws._room = new GameRoom(key);
+        rooms.set(key, ws._room);
+        ws._room.hostWs = ws;
+        ws._slot = ws._room.assignSlot(ws);
+        ws._room.clients.set(ws, { slot: ws._slot, name: msg.name || 'Host' });
+        ws._room.sendTo(ws, {
+          type: 'room_created', key, slot: ws._slot, isHost: true,
+          players: ws._room.getSlotList()
         });
         break;
       }
@@ -958,64 +1044,75 @@ wss.on('connection', (ws) => {
         if (!r) { ws.send(JSON.stringify({ type: 'error', message: 'ルームが見つかりません' })); return; }
         if (r.clients.size >= 16) { ws.send(JSON.stringify({ type: 'error', message: 'ルームが満員です (最大16人)' })); return; }
         if (r.lobbyState === 'playing') { ws.send(JSON.stringify({ type: 'error', message: 'ゲーム中です' })); return; }
-        room = r;
-        mySlot = room.assignSlot(ws);
-        room.clients.set(ws, { slot: mySlot, name: msg.name || 'Player' });
-        room.sendTo(ws, {
-          type: 'room_joined', key: msg.key, slot: mySlot, isHost: false,
-          players: room.getSlotList()
+        ws._room = r;
+        ws._slot = ws._room.assignSlot(ws);
+        ws._room.clients.set(ws, { slot: ws._slot, name: msg.name || 'Player' });
+        ws._room.sendTo(ws, {
+          type: 'room_joined', key: msg.key, slot: ws._slot, isHost: false,
+          players: ws._room.getSlotList()
         });
-        room.broadcast({
-          type: 'player_joined', slot: mySlot, name: msg.name || 'Player',
-          players: room.getSlotList()
+        ws._room.broadcast({
+          type: 'player_joined', slot: ws._slot, name: msg.name || 'Player',
+          players: ws._room.getSlotList()
         }, ws);
         break;
       }
 
       case 'start_game': {
-        if (room && room.hostWs === ws && room.lobbyState === 'waiting') {
-          room.startGame();
+        if (ws._room && ws._room.hostWs === ws && ws._room.lobbyState === 'waiting') {
+          ws._room.startGame();
         }
         break;
       }
 
       case 'input': {
-        if (room && (room.gameState === 'playing' || room.gameState === 'countdown')) {
-          room.inputs[mySlot] = msg.input;
+        if (ws._room && (ws._room.gameState === 'playing' || ws._room.gameState === 'countdown')) {
+          ws._room.inputs[ws._slot] = msg.input;
         }
         break;
       }
 
       case 'choice_result': {
-        if (room && room._choiceThrower && room._choiceThrower.id === mySlot) {
-          room.resolveChoice(msg.returnToField);
+        if (ws._room && ws._room._choiceThrower && ws._room._choiceThrower.id === ws._slot) {
+          ws._room.resolveChoice(msg.returnToField);
         }
+        break;
+      }
+
+      case 'matchmake': {
+        addToMatchQueue(ws, msg.name || 'Player');
+        break;
+      }
+
+      case 'cancel_match': {
+        removeFromMatchQueue(ws);
         break;
       }
     }
   });
 
   ws.on('close', () => {
-    if (!room) return;
-    const wasHost = room.hostWs === ws;
-    room.removePlayer(ws);
+    if (ws._matchmaking) removeFromMatchQueue(ws);
+    if (!ws._room) return;
+    const wasHost = ws._room.hostWs === ws;
+    ws._room.removePlayer(ws);
 
-    if (room.clients.size === 0) {
-      room.destroy();
-      rooms.delete(room.key);
+    if (ws._room.clients.size === 0) {
+      ws._room.destroy();
+      rooms.delete(ws._room.key);
       return;
     }
 
-    room.broadcast({
-      type: 'player_left', slot: mySlot, wasHost,
-      players: room.getSlotList()
+    ws._room.broadcast({
+      type: 'player_left', slot: ws._slot, wasHost,
+      players: ws._room.getSlotList()
     });
 
     if (wasHost) {
-      const [newHost] = room.clients.keys();
-      room.hostWs = newHost;
-      const info = room.clients.get(newHost);
-      room.sendTo(newHost, { type: 'become_host', slot: info.slot });
+      const [newHost] = ws._room.clients.keys();
+      ws._room.hostWs = newHost;
+      const info = ws._room.clients.get(newHost);
+      ws._room.sendTo(newHost, { type: 'become_host', slot: info.slot });
     }
   });
 });

@@ -164,8 +164,6 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 <body>
 
 <canvas id="c"></canvas>
-<audio id="menu-bgm" src="bgm-menu.mp3" loop preload="auto"></audio>
-<audio id="game-bgm" src="bgm-game.mp3" loop preload="auto"></audio>
 
 <div id="hud">
   <div class="team-score team-a" id="score-a">BLUE 内:10 外:0</div>
@@ -2154,31 +2152,47 @@ const getBGMDest = () => {
   return _bgmMaster;
 };
 
-/* ── BGM（メニュー/試合中） ── */
+/* ── BGM（メニュー/試合中） ──
+   <audio loop>はループ端で再バッファ/シークが入り隙間が出るため、
+   AudioBufferに事前デコードしAudioBufferSourceNode.loopでシームレスに再生する */
+const BGM_FILES = { menu: { url: 'bgm-menu.mp3', vol: 1 }, game: { url: 'bgm-game.mp3', vol: 0.45 } };
+const _bgmBuffers = {};
 let _bgmUnlocked = false;
-function unlockBGM() {
-  if (_bgmUnlocked) return;
-  _bgmUnlocked = true;
+let _bgmSource = null, _bgmGain = null, _bgmCurrent = null;
+
+async function loadBGMBuffer(name) {
   try {
-    const ac = getAC();
-    const menuSrc = ac.createMediaElementSource(document.getElementById('menu-bgm'));
-    menuSrc.connect(getBGMDest());
-    // 試合中BGMはメニューBGMより控えめな音量にする
-    const gameSrc = ac.createMediaElementSource(document.getElementById('game-bgm'));
-    const gameGain = ac.createGain();
-    gameGain.gain.value = 0.45;
-    gameSrc.connect(gameGain);
-    gameGain.connect(getBGMDest());
-  } catch (e) { /* 既に接続済み等は無視 */ }
+    const res = await fetch(BGM_FILES[name].url);
+    const arr = await res.arrayBuffer();
+    _bgmBuffers[name] = await getAC().decodeAudioData(arr);
+  } catch (e) { /* 読み込み失敗時は無音のまま */ }
 }
+loadBGMBuffer('menu');
+loadBGMBuffer('game');
+
+function playBGM(name) {
+  if (_bgmCurrent === name) return;
+  const buf = _bgmBuffers[name];
+  if (!buf) return; // デコード未完了。次フレームで再試行
+  stopBGM();
+  const ac = getAC();
+  const src = ac.createBufferSource();
+  src.buffer = buf; src.loop = true;
+  const gain = ac.createGain();
+  gain.gain.value = BGM_FILES[name].vol;
+  src.connect(gain); gain.connect(getBGMDest());
+  src.start(0);
+  _bgmSource = src; _bgmGain = gain; _bgmCurrent = name;
+}
+
+function stopBGM() {
+  if (_bgmSource) { try { _bgmSource.stop(); } catch (e) {} _bgmSource.disconnect(); _bgmSource = null; }
+  if (_bgmGain) { _bgmGain.disconnect(); _bgmGain = null; }
+  _bgmCurrent = null;
+}
+
 ['pointerdown', 'keydown'].forEach(ev => {
-  document.addEventListener(ev, () => {
-    unlockBGM();
-    const menuEl = document.getElementById('menu-bgm');
-    const gameEl = document.getElementById('game-bgm');
-    if (game.state === 'menu' && menuEl.paused) menuEl.play().catch(() => {});
-    else if (['countdown', 'playing', 'playing_client'].includes(game.state) && gameEl.paused) gameEl.play().catch(() => {});
-  }, { once: true });
+  document.addEventListener(ev, () => { getAC(); _bgmUnlocked = true; }, { once: true });
 });
 
 const sfx = {
@@ -2537,19 +2551,12 @@ function animate() {
   const dt = Math.min(clock.getDelta(), 0.05);
   updateParticles(dt);
   game.update(dt);
-  const menuBgm = document.getElementById('menu-bgm');
-  const gameBgm = document.getElementById('game-bgm');
   const inMenu = (game.state === 'menu' || game.state === 'lobby');
   const inMatch = (game.state === 'countdown' || game.state === 'playing' || game.state === 'playing_client');
-  if (inMenu) {
-    if (menuBgm.paused && _bgmUnlocked) menuBgm.play().catch(() => {});
-  } else if (!menuBgm.paused) {
-    menuBgm.pause();
-  }
-  if (inMatch) {
-    if (gameBgm.paused && _bgmUnlocked) gameBgm.play().catch(() => {});
-  } else if (!gameBgm.paused) {
-    gameBgm.pause();
+  if (_bgmUnlocked) {
+    if (inMenu) playBGM('menu');
+    else if (inMatch) playBGM('game');
+    else stopBGM();
   }
   if (game.state === 'menu' || game.state === 'lobby') {
     const t = performance.now() * 0.001;

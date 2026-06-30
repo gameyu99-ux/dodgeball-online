@@ -2160,11 +2160,15 @@ function unlockBGM() {
   if (_bgmUnlocked) return;
   _bgmUnlocked = true;
   try {
-    for (const id of ['menu-bgm', 'game-bgm']) {
-      const el = document.getElementById(id);
-      const src = getAC().createMediaElementSource(el);
-      src.connect(getBGMDest());
-    }
+    const ac = getAC();
+    const menuSrc = ac.createMediaElementSource(document.getElementById('menu-bgm'));
+    menuSrc.connect(getBGMDest());
+    // 試合中BGMはメニューBGMより控えめな音量にする
+    const gameSrc = ac.createMediaElementSource(document.getElementById('game-bgm'));
+    const gameGain = ac.createGain();
+    gameGain.gain.value = 0.45;
+    gameSrc.connect(gameGain);
+    gameGain.connect(getBGMDest());
   } catch (e) { /* 既に接続済み等は無視 */ }
 }
 ['pointerdown', 'keydown'].forEach(ev => {

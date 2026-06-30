@@ -89,8 +89,8 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #jump-text{position:fixed;top:30%;left:50%;transform:translate(-50%,-50%) scale(0);pointer-events:none;z-index:31;font-size:44px;font-weight:900;color:#ffe033;text-shadow:0 0 20px rgba(255,200,0,.9),0 0 6px #fff;letter-spacing:3px;transition:none;white-space:nowrap}
 @keyframes jumpPop{0%{transform:translate(-50%,-50%) scale(0);opacity:1}35%{transform:translate(-50%,-50%) scale(1.15);opacity:1}65%{transform:translate(-50%,-50%) scale(1);opacity:1}100%{transform:translate(-50%,-50%) scale(1.05);opacity:0}}
 @keyframes hitPop{0%{transform:translate(-50%,-50%) scale(0);opacity:1}40%{transform:translate(-50%,-50%) scale(1.25);opacity:1}70%{transform:translate(-50%,-50%) scale(1);opacity:1}100%{transform:translate(-50%,-50%) scale(1.1);opacity:0}}
-#mode-select{display:flex;flex-wrap:wrap;justify-content:center;gap:20px;margin-bottom:20px}
-#mode-select .mode-online{flex-basis:100%}
+#mode-select{display:flex;flex-direction:column;align-items:center;gap:20px;margin-bottom:20px}
+#mode-row-top{display:flex;gap:20px}
 .mode-btn{padding:20px 36px;font-size:20px;font-weight:bold;border:none;border-radius:12px;cursor:pointer;color:#fff;transition:transform .2s}
 .mode-btn:hover{transform:scale(1.05)}
 .mode-solo{background:linear-gradient(135deg,#3498db,#2980b9)}
@@ -217,8 +217,10 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   <h1>DODGEBALL 3D</h1>
   <p>一人称視点ドッジボール ─ 10 vs 10（外野あり）</p>
   <div id="mode-select">
-    <button class="mode-btn mode-solo" id="btn-solo">ひとりでプレイ</button>
-    <button class="mode-btn mode-multi" id="btn-multi">ともだちとプレイ</button>
+    <div id="mode-row-top">
+      <button class="mode-btn mode-solo" id="btn-solo">ひとりでプレイ</button>
+      <button class="mode-btn mode-multi" id="btn-multi">ともだちとプレイ</button>
+    </div>
     <button class="mode-btn mode-online" id="btn-online">オンラインでプレイ</button>
   </div>
   <div id="settings-panel">

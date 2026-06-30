@@ -1456,12 +1456,26 @@ const game = {
     }
   },
 
+  predictBallPickup() {
+    if (!humanPlayer || !humanPlayer.alive || humanPlayer.ball || humanPlayer._predictedBall) return;
+    for (const b of balls) {
+      if (b.heldBy || b.flying) continue;
+      if (b.pos.distanceTo(humanPlayer.pos) < 1.2) {
+        humanPlayer.ball = b;
+        humanPlayer._predictedBall = b;
+        humanPlayer._predictedAt = performance.now();
+        break;
+      }
+    }
+  },
+
   update(dt) {
     // Client mode: render from received state
     if (this.state === 'playing_client') {
       this.handleInput(dt);
       if (humanPlayer && humanPlayer.alive && net.lastRecvState && net.lastRecvState.s === 'playing') {
         humanPlayer.update(dt);
+        this.predictBallPickup();
       }
       if (net.lastRecvState) this.applyNetState(net.lastRecvState, dt);
       this.updateCatchUI();
@@ -1565,7 +1579,9 @@ const game = {
           p.eyeH = p.crouching ? CFG.CROUCH_EYE : CFG.EYE_H;
         }
         const ballId = d[8];
-        p.ball = ballId >= 0 && ballId < balls.length ? balls[ballId] : null;
+        const srvBall = ballId >= 0 && ballId < balls.length ? balls[ballId] : null;
+        p._srvBall = srvBall;
+        if (!p._predictedBall) p.ball = srvBall;
       } else {
         // 相手・CPUは受信座標へ補間
         if (isNew) {
@@ -1602,7 +1618,23 @@ const game = {
     for (let i = 0; i < st.b.length; i++) {
       const d = st.b[i], b = balls[i];
       const hid = d[7];
-      const holder = hid >= 0 && hid < players.length ? players[hid] : null;
+      let holder = hid >= 0 && hid < players.length ? players[hid] : null;
+
+      // クライアント予測: 自分が拾ったと予測したボールの確定/取消処理
+      if (humanPlayer && humanPlayer._predictedBall === b) {
+        if (holder === humanPlayer) {
+          humanPlayer._predictedBall = null; // サーバーが確定
+        } else if (holder && holder !== humanPlayer) {
+          humanPlayer._predictedBall = null; // 他プレイヤーが先に取得、予測取消
+          if (humanPlayer.ball === b) humanPlayer.ball = humanPlayer._srvBall || null;
+        } else if (performance.now() - (humanPlayer._predictedAt || 0) > 1000) {
+          humanPlayer._predictedBall = null; // タイムアウト、サーバー値を信頼
+          humanPlayer.ball = humanPlayer._srvBall || null;
+        } else {
+          holder = humanPlayer; // サーバー未反映、予測を維持
+        }
+      }
+
       b.heldBy = holder;
       b.flying = !!d[6];
       if (isNew) b.throwerTeam = d[8] != null ? d[8] : -1;

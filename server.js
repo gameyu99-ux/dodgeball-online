@@ -906,7 +906,8 @@ const server = http.createServer((req, res) => {
   const types = {
     '.html': 'text/html', '.js': 'text/javascript',
     '.css': 'text/css', '.json': 'application/json',
-    '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon'
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.ico': 'image/x-icon',
+    '.mp3': 'audio/mpeg'
   };
   fs.readFile(fullPath, (err, data) => {
     if (err) { res.writeHead(404); res.end('Not found'); return; }

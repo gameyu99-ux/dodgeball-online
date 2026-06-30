@@ -2055,12 +2055,12 @@ function triggerHitEffect(hitPos) {
 const settings = {
   name: localStorage.getItem('db_name') || 'Player',
   sensitivity: parseFloat(localStorage.getItem('db_sens') || '1.0'),
-  bgmVol: parseFloat(localStorage.getItem('db_bgm') || '0.5'),
+  bgmVol: parseFloat(localStorage.getItem('db_bgm2') || '0.5'),
   seVol: parseFloat(localStorage.getItem('db_se') || '0.8'),
   save() {
     localStorage.setItem('db_name', this.name);
     localStorage.setItem('db_sens', this.sensitivity);
-    localStorage.setItem('db_bgm', this.bgmVol);
+    localStorage.setItem('db_bgm2', this.bgmVol);
     localStorage.setItem('db_se', this.seVol);
   }
 };
@@ -2231,9 +2231,9 @@ const sfx = {
       pea.connect(peaG); peaG.connect(osc.frequency);
       // エンベロープ
       const env = ac.createGain();
-      env.gain.setValueAtTime(0,t); env.gain.linearRampToValueAtTime(0.5,t+0.02);
-      env.gain.setValueAtTime(0.5,t+dur-0.05); env.gain.linearRampToValueAtTime(0,t+dur);
-      osc.connect(env); env.connect(ac.destination);
+      env.gain.setValueAtTime(0,t); env.gain.linearRampToValueAtTime(0.28,t+0.02);
+      env.gain.setValueAtTime(0.28,t+dur-0.05); env.gain.linearRampToValueAtTime(0,t+dur);
+      osc.connect(env); env.connect(getSEDest());
       // 息のノイズ（薄く）
       const nb = ac.createBuffer(1, Math.floor(ac.sampleRate*(dur+0.1)), ac.sampleRate);
       const nd = nb.getChannelData(0); for(let i=0;i<nd.length;i++) nd[i]=Math.random()*2-1;

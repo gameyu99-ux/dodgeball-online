@@ -1500,14 +1500,18 @@ const game = {
 
   predictBallPickup() {
     if (!humanPlayer || !humanPlayer.alive || humanPlayer.ball || humanPlayer._predictedBall) return;
+    const bd = humanPlayer.getBounds();
     for (const b of balls) {
       if (b.heldBy || b.flying) continue;
-      if (b.pos.distanceTo(humanPlayer.pos) < 1.2) {
-        humanPlayer.ball = b;
-        humanPlayer._predictedBall = b;
-        humanPlayer._predictedAt = performance.now();
-        break;
-      }
+      if (b.pos.distanceTo(humanPlayer.pos) >= 1.2) continue;
+      // サーバー側のゾーン判定(ballReachable)と不一致だと予測が必ず却下されるため、
+      // 同じ条件をクライアントでも先にチェックしてから予測する
+      if (b.pos.z < bd.zMin - 0.5 || b.pos.z > bd.zMax + 0.5) continue;
+      if (b.pos.x < bd.xMin - 0.5 || b.pos.x > bd.xMax + 0.5) continue;
+      humanPlayer.ball = b;
+      humanPlayer._predictedBall = b;
+      humanPlayer._predictedAt = performance.now();
+      break;
     }
   },
 
@@ -1669,7 +1673,7 @@ const game = {
         } else if (holder && holder !== humanPlayer) {
           humanPlayer._predictedBall = null; // 他プレイヤーが先に取得、予測取消
           if (humanPlayer.ball === b) humanPlayer.ball = humanPlayer._srvBall || null;
-        } else if (performance.now() - (humanPlayer._predictedAt || 0) > 1000) {
+        } else if (performance.now() - (humanPlayer._predictedAt || 0) > 1800) {
           humanPlayer._predictedBall = null; // タイムアウト、サーバー値を信頼
           humanPlayer.ball = humanPlayer._srvBall || null;
         } else {

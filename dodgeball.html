@@ -239,8 +239,8 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
     </div>
     <div class="set-row">
       <label>BGM</label>
-      <input type="range" id="set-bgm" min="0" max="1" step="0.05" value="0">
-      <span class="set-val" id="set-bgm-val">0%</span>
+      <input type="range" id="set-bgm" min="0" max="1" step="0.05" value="0.5">
+      <span class="set-val" id="set-bgm-val">50%</span>
     </div>
     <div class="set-row">
       <label>SE</label>
@@ -2055,7 +2055,7 @@ function triggerHitEffect(hitPos) {
 const settings = {
   name: localStorage.getItem('db_name') || 'Player',
   sensitivity: parseFloat(localStorage.getItem('db_sens') || '1.0'),
-  bgmVol: parseFloat(localStorage.getItem('db_bgm') || '0'),
+  bgmVol: parseFloat(localStorage.getItem('db_bgm') || '0.5'),
   seVol: parseFloat(localStorage.getItem('db_se') || '0.8'),
   save() {
     localStorage.setItem('db_name', this.name);

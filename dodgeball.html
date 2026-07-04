@@ -172,6 +172,12 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .online-btns{display:flex;flex-direction:column;gap:32px;margin-bottom:20px;min-width:260px}
 .mode-ranked{background:linear-gradient(135deg,#f1c40f,#e67e22)!important;color:#000!important}
 .mode-casual{background:linear-gradient(135deg,#3498db,#2980b9)!important}
+#auth-bar{position:absolute;top:14px;right:14px;z-index:2}
+#btn-login{padding:9px 18px;font-size:13px;font-weight:bold;background:#fff;color:#333;border:none;border-radius:8px;cursor:pointer;box-shadow:0 2px 8px rgba(0,0,0,.3)}
+#btn-login:hover{background:#eee}
+#auth-user{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.45);border-radius:8px;padding:7px 12px;font-size:13px}
+#auth-name{color:#8f8;font-weight:bold}
+#btn-logout{padding:4px 10px;font-size:11px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer}
 #rank-result{text-align:center;margin-top:10px;margin-bottom:10px}
 #rank-change-text{font-size:14px;margin-bottom:6px}
 #rank-stats-detail{font-size:12px;opacity:.6;margin-bottom:8px}
@@ -234,6 +240,13 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 <div id="menu">
   <h1><img src="title-logo.png" alt="SUPER DODGEBALL"></h1>
   <p>一人称視点ドッジボール ─ 10 vs 10（外野あり）</p>
+  <div id="auth-bar">
+    <button id="btn-login">G  Googleでログイン</button>
+    <span id="auth-user" style="display:none">
+      <span id="auth-name"></span>
+      <button id="btn-logout">ログアウト</button>
+    </span>
+  </div>
   <div id="mode-select">
     <div id="mode-row-top">
       <button class="mode-btn mode-solo" id="btn-solo">ひとりでプレイ</button>
@@ -373,6 +386,9 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 <div id="jump-text">JUMP SHOT!</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 'use strict';
 
@@ -970,6 +986,7 @@ let pendingCatch = false;
 
 // マウスドラッグで視点移動
 let mouseDragging = false, lastMX = 0, lastMY = 0, dragMoved = false;
+let pressMX = 0, pressMY = 0;
 
 document.addEventListener('keydown', e => {
   if (e.target.tagName === 'INPUT') return;
@@ -998,7 +1015,8 @@ document.addEventListener('mousemove', e => {
     mouseDX += e.movementX; mouseDY += e.movementY;
   } else if (mouseDragging) {
     const dx = e.clientX - lastMX, dy = e.clientY - lastMY;
-    if (Math.abs(dx) > 2 || Math.abs(dy) > 2) dragMoved = true;
+    // 押した位置からの合計距離で判定（クリック時の数pxのブレで投げが不発にならないように）
+    if (Math.hypot(e.clientX - pressMX, e.clientY - pressMY) > 8) dragMoved = true;
     mouseDX += dx; mouseDY += dy;
     lastMX = e.clientX; lastMY = e.clientY;
   }
@@ -1028,6 +1046,7 @@ lookArea.addEventListener('mousedown', e => {
   if ((game.state !== 'playing' && game.state !== 'playing_client') || game.paused) return;
   mouseDragging = true; dragMoved = false;
   lastMX = e.clientX; lastMY = e.clientY;
+  pressMX = e.clientX; pressMY = e.clientY;
   e.preventDefault();
 });
 lookArea.addEventListener('touchstart', e => {
@@ -1270,6 +1289,79 @@ function updateAI(p, dt) {
   }
 }
 
+/* ── Firebase (アカウント & ランク永続化) ── */
+// セットアップ手順: Firebaseコンソールでプロジェクト作成 → Authentication(Google)有効化
+// → Firestore作成 → 下のFIREBASE_CONFIGをプロジェクト設定の値に置き換える
+const FIREBASE_CONFIG = {
+  apiKey: 'YOUR_API_KEY',
+  authDomain: 'YOUR_PROJECT.firebaseapp.com',
+  projectId: 'YOUR_PROJECT',
+  appId: 'YOUR_APP_ID'
+};
+
+let fbAuth = null, fbDB = null, fbUser = null;
+const firebaseEnabled = typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY';
+
+function initFirebase() {
+  if (!firebaseEnabled) {
+    const bar = document.getElementById('auth-bar');
+    if (bar) bar.style.display = 'none';
+    return;
+  }
+  firebase.initializeApp(FIREBASE_CONFIG);
+  fbAuth = firebase.auth();
+  fbDB = firebase.firestore();
+
+  fbAuth.onAuthStateChanged(async (user) => {
+    fbUser = user;
+    updateAuthUI();
+    if (!user) return;
+    try {
+      const ref = fbDB.collection('users').doc(user.uid);
+      const snap = await ref.get();
+      const cloudRP = snap.exists ? (snap.data().rankRP || 0) : 0;
+      // クラウドと端末の大きい方を採用（初回ログイン時にこれまでのRPを引き継ぐ）
+      const merged = Math.max(cloudRP, _rankRP);
+      _rankRP = merged;
+      localStorage.setItem('db_rank_rp', String(merged));
+      if (merged !== cloudRP) {
+        ref.set({ rankRP: merged, name: settings.name, updated: Date.now() }, { merge: true }).catch(() => {});
+      }
+      if (document.getElementById('online-select').style.display === 'flex') updateRankDisplay();
+    } catch (e) {
+      console.warn('rank sync failed:', e);
+    }
+  });
+}
+
+function signInGoogle() {
+  if (!fbAuth) return;
+  const provider = new firebase.auth.GoogleAuthProvider();
+  fbAuth.signInWithPopup(provider).catch(e => {
+    if (e.code !== 'auth/popup-closed-by-user' && e.code !== 'auth/cancelled-popup-request') {
+      alert('ログインに失敗しました: ' + e.message);
+    }
+  });
+}
+
+function signOutGoogle() {
+  if (fbAuth) fbAuth.signOut();
+}
+
+function updateAuthUI() {
+  const loginBtn = document.getElementById('btn-login');
+  const userSpan = document.getElementById('auth-user');
+  if (!loginBtn || !userSpan) return;
+  if (fbUser) {
+    loginBtn.style.display = 'none';
+    userSpan.style.display = 'flex';
+    document.getElementById('auth-name').textContent = fbUser.displayName || fbUser.email || 'ユーザー';
+  } else {
+    loginBtn.style.display = 'block';
+    userSpan.style.display = 'none';
+  }
+}
+
 /* ── Rank system ── */
 const RANKS = [
   { name: 'ブロンズ III', icon: '🥉', color: '#cd7f32' },
@@ -1287,8 +1379,19 @@ const RANKS = [
 ];
 const RANK_RP_PER_LEVEL = 100;
 
-function getRankRP() { return parseInt(localStorage.getItem('db_rank_rp') || '0', 10); }
-function setRankRP(rp) { localStorage.setItem('db_rank_rp', String(Math.max(0, rp))); }
+// RPはメモリキャッシュを正とし、localStorageに常時保存。
+// Googleログイン中はFirestoreにも同期する（機種変更・別端末でも引き継げる）
+let _rankRP = parseInt(localStorage.getItem('db_rank_rp') || '0', 10);
+function getRankRP() { return _rankRP; }
+function setRankRP(rp) {
+  _rankRP = Math.max(0, rp);
+  localStorage.setItem('db_rank_rp', String(_rankRP));
+  if (fbUser && fbDB) {
+    fbDB.collection('users').doc(fbUser.uid)
+      .set({ rankRP: _rankRP, name: settings.name, updated: Date.now() }, { merge: true })
+      .catch(() => {});
+  }
+}
 function getRankIndex(rp) { return Math.min(Math.floor(rp / RANK_RP_PER_LEVEL), RANKS.length - 1); }
 function getRankInfo(rp) { return RANKS[getRankIndex(rp)]; }
 
@@ -1312,6 +1415,28 @@ function updateRankDisplay() {
   const rpInRank = rp - idx * RANK_RP_PER_LEVEL;
   const pct = idx >= RANKS.length - 1 ? 100 : Math.floor(rpInRank / RANK_RP_PER_LEVEL * 100);
   document.getElementById('rank-progress-fill').style.width = pct + '%';
+}
+
+/* ── GPU resource cleanup ── */
+// scene.removeだけではGPUメモリ(geometry/material/texture)が解放されず、
+// ゲームを重ねるごとに動作が重くなるため、再スタート時に明示的に破棄する
+function disposeObject3D(root) {
+  root.traverse(o => {
+    if (o.geometry) o.geometry.dispose();
+    if (o.material) {
+      const mats = Array.isArray(o.material) ? o.material : [o.material];
+      for (const m of mats) { if (m.map) m.map.dispose(); m.dispose(); }
+    }
+  });
+}
+
+function clearGameObjects() {
+  players.forEach(p => { scene.remove(p.mesh); disposeObject3D(p.mesh); });
+  balls.forEach(b => {
+    scene.remove(b.mesh); disposeObject3D(b.mesh);
+    scene.remove(b.trail); disposeObject3D(b.trail);
+  });
+  players.length = 0; balls.length = 0;
 }
 
 /* ── Game ── */
@@ -1346,6 +1471,12 @@ const game = {
       updateRankDisplay();
     });
     document.getElementById('btn-ranked').addEventListener('click', () => {
+      // Firebaseが有効な場合、ランクマッチはログイン必須（ランクをアカウントに紐付けるため）
+      if (firebaseEnabled && !fbUser) {
+        alert('ランクマッチにはGoogleログインが必要です');
+        signInGoogle();
+        return;
+      }
       this.ranked = true;
       document.getElementById('online-select').style.display = 'none';
       document.getElementById('matchmaking').style.display = 'flex';
@@ -1468,9 +1599,7 @@ const game = {
     this.paused = false;
     this.hitCount = 0;
 
-    players.forEach(p => { if (p.mesh.parent) scene.remove(p.mesh); });
-    balls.forEach(b => { scene.remove(b.mesh); scene.remove(b.trail); });
-    players.length = 0; balls.length = 0;
+    clearGameObjects();
 
     const INITIAL_OUTFIELD = 2;
     for (let i = 0; i < CFG.TEAM_SIZE; i++) {
@@ -1515,9 +1644,7 @@ const game = {
     this.hitCount = 0;
     this.mySlot = mySlot;
 
-    players.forEach(p => { if (p.mesh.parent) scene.remove(p.mesh); });
-    balls.forEach(b => { scene.remove(b.mesh); scene.remove(b.trail); });
-    players.length = 0; balls.length = 0;
+    clearGameObjects();
 
     for (let i = 0; i < CFG.TEAM_SIZE; i++) {
       const isMe = (i === mySlot);
@@ -1856,7 +1983,9 @@ const game = {
         if (ev.type === 'msg') {
           if (ev.slot == null || (humanPlayer && ev.slot === humanPlayer.id)) this.showMsg(ev.text, ev.color);
         }
-        if (ev.type === 'sfx' && sfx[ev.name]) sfx[ev.name]();
+        if (ev.type === 'sfx' && sfx[ev.name]) {
+          if (ev.slot == null || (humanPlayer && ev.slot === humanPlayer.id)) sfx[ev.name]();
+        }
       }
       net.clientEvents.length = 0;
     }
@@ -1986,7 +2115,7 @@ const game = {
     const mc = document.getElementById('minimap');
     const ctx = mc.getContext('2d');
     const W = 140, H = 140;
-    mc.width = W; mc.height = H;
+    if (mc.width !== W || mc.height !== H) { mc.width = W; mc.height = H; }
     ctx.clearRect(0, 0, W, H);
 
     // 全体エリア: x ∈ [-hW-oD, hW+oD], z ∈ [-hL-oD, hL+oD]
@@ -2095,13 +2224,15 @@ const game = {
 /* ── Hit Effects ── */
 let cameraShake = 0;
 const particles = [];
+// ジオメトリは共有、マテリアルは寿命が切れたら破棄する（GPUメモリの蓄積防止）
+const _particleGeo = new THREE.SphereGeometry(0.08, 5, 5);
 
 function spawnHitParticles(pos) {
   const colors = [0xff6600, 0xffcc00, 0xff3300, 0xffffff];
   for (let i = 0; i < 14; i++) {
-    const geo = new THREE.SphereGeometry(0.05 + Math.random()*0.07, 5, 5);
     const mat = new THREE.MeshBasicMaterial({color: colors[Math.floor(Math.random()*colors.length)]});
-    const mesh = new THREE.Mesh(geo, mat);
+    const mesh = new THREE.Mesh(_particleGeo, mat);
+    mesh.scale.setScalar(0.7 + Math.random());
     mesh.position.copy(pos);
     scene.add(mesh);
     const vel = new THREE.Vector3(
@@ -2109,7 +2240,7 @@ function spawnHitParticles(pos) {
       Math.random()*8 + 2,
       (Math.random()-0.5)*12
     );
-    particles.push({mesh, vel, life: 0.55 + Math.random()*0.25, maxLife: 0.8});
+    particles.push({mesh, vel, life: 0.55 + Math.random()*0.25, maxLife: 0.8, baseScale: mesh.scale.x});
   }
 }
 
@@ -2117,13 +2248,13 @@ function updateParticles(dt) {
   for (let i = particles.length-1; i >= 0; i--) {
     const p = particles[i];
     p.life -= dt;
-    if (p.life <= 0) { scene.remove(p.mesh); particles.splice(i,1); continue; }
+    if (p.life <= 0) { scene.remove(p.mesh); p.mesh.material.dispose(); particles.splice(i,1); continue; }
     p.vel.y -= 20 * dt;
     p.mesh.position.addScaledVector(p.vel, dt);
     const t = p.life / p.maxLife;
     p.mesh.material.opacity = t;
     p.mesh.material.transparent = true;
-    p.mesh.scale.setScalar(t * 1.2);
+    p.mesh.scale.setScalar(t * 1.2 * p.baseScale);
   }
 }
 
@@ -2674,6 +2805,9 @@ function updateLobbyPlayers(playerList) {
 }
 
 game.init();
+initFirebase();
+document.getElementById('btn-login').addEventListener('click', signInGoogle);
+document.getElementById('btn-logout').addEventListener('click', signOutGoogle);
 
 function animate() {
   requestAnimationFrame(animate);

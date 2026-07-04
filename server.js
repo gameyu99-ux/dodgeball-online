@@ -81,8 +81,7 @@ class ServerPlayer {
     this.aiTarget = new Vec3();
     this.aiDodgeDir = 0;
     this.targetBall = null;
-    this._prevThrow = false;
-    this._prevCatch = false;
+    this._throwHold = 0;
     this._catchTimer = null;
     this.stats = { infieldHits: 0, outfieldHits: 0, infieldTime: 0 };
   }
@@ -307,10 +306,10 @@ class ServerBall {
             if (dist < CFG.CATCH_PERFECT[1] && dist > CFG.CATCH_PERFECT[0]) {
               p.pickUp(this);
               p.catchImmunity = 0.8;
-              room.pendingEvents.push({ type: 'sfx', name: 'catch' });
-              room.pendingEvents.push({ type: 'msg', text: 'キャッチ！', color: '#0f0' });
+              room.pendingEvents.push({ type: 'sfx', name: 'catch', slot: p.id });
+              room.pendingEvents.push({ type: 'msg', text: 'キャッチ！', color: '#0f0', slot: p.id });
             } else {
-              room.pendingEvents.push({ type: 'msg', text: 'キャッチ失敗...', color: '#f44' });
+              room.pendingEvents.push({ type: 'msg', text: 'キャッチ失敗...', color: '#f44', slot: p.id });
               this.drop(this.pos);
             }
             return;
@@ -340,11 +339,11 @@ class ServerBall {
             p.pickUp(this);
             p.catchImmunity = 0.8;
             if (thrower.inField) thrower.sendToOutfield();
-            room.pendingEvents.push({ type: 'sfx', name: 'catch' });
-            room.pendingEvents.push({ type: 'msg', text: 'NICE CATCH!', color: '#0f0' });
+            room.pendingEvents.push({ type: 'sfx', name: 'catch', slot: p.id });
+            room.pendingEvents.push({ type: 'msg', text: 'NICE CATCH!', color: '#0f0', slot: p.id });
             return;
           } else {
-            room.pendingEvents.push({ type: 'msg', text: 'CATCH FAILED...', color: '#f44' });
+            room.pendingEvents.push({ type: 'msg', text: 'CATCH FAILED...', color: '#f44', slot: p.id });
           }
         }
 
@@ -359,7 +358,7 @@ class ServerBall {
         });
         p.sendToOutfield();
         if (p.isHuman) {
-          room.pendingEvents.push({ type: 'sfx', name: 'outfield' });
+          room.pendingEvents.push({ type: 'sfx', name: 'outfield', slot: p.id });
           room.pendingEvents.push({ type: 'msg', text: '外野へ移動！', color: '#f80', slot: p.id });
         }
         this.drop(this.pos);
@@ -711,7 +710,20 @@ class GameRoom {
 
     this.broadcast({ type: 'game_start', players: this.getSlotList() });
 
-    this._tickIv = setInterval(() => this.tick(), TICK_MS);
+    // setIntervalは遅延が蓄積してゲーム内時間が実時間より遅く進むため、
+    // 実経過時間ぶんのtickをまとめて回して実時間に同期させる
+    this._lastTick = Date.now();
+    this._tickAcc = 0;
+    this._tickIv = setInterval(() => {
+      const now = Date.now();
+      this._tickAcc += Math.min((now - this._lastTick) / 1000, 0.2);
+      this._lastTick = now;
+      const step = 1 / TICK_RATE;
+      while (this._tickAcc >= step && this._tickIv) {
+        this._tickAcc -= step;
+        this.tick();
+      }
+    }, TICK_MS / 2);
   }
 
   tick() {
@@ -751,20 +763,28 @@ class GameRoom {
         p.vel.x = move.x * spd; p.vel.z = move.z * spd;
       } else { p.vel.x *= 0.85; p.vel.z *= 0.85; }
 
-      if (input.jump) p.jump();
+      if (input.jump) { p.jump(); input.jump = false; }
       p.setCrouch(!!input.crouch);
 
-      if (input.throw && !p._prevThrow && p.ball) {
-        p.throwBall(p.getLookDir(), this);
+      // throwはワンショット消費。クライアント予測でボールを拾った直後の
+      // クリックはサーバー側でまだ未所持のことがあるため、少しの間保持する
+      if (input.throw) {
+        if (p.ball) {
+          p.throwBall(p.getLookDir(), this);
+          input.throw = false; p._throwHold = 0;
+        } else if (++p._throwHold > 15) {
+          input.throw = false; p._throwHold = 0;
+        }
+      } else {
+        p._throwHold = 0;
       }
-      p._prevThrow = !!input.throw;
 
-      if (input.catch && !p._prevCatch) {
+      if (input.catch) {
+        input.catch = false;
         p.catchAttempt = true;
         clearTimeout(p._catchTimer);
         p._catchTimer = setTimeout(() => { p.catchAttempt = false; }, 800);
       }
-      p._prevCatch = !!input.catch;
     }
 
     // AI
@@ -775,6 +795,17 @@ class GameRoom {
     // Physics
     for (const p of this.players) p.update(dt);
     for (const b of this.balls) b.update(dt, this);
+
+    // Human ball pickup — AIより先に判定して人間を優先。
+    // クライアント予測(1.2m)はクライアント予測位置基準で、サーバー側の
+    // 位置とは僅かにズレるため、サーバーは広め(1.5m)に取って予測却下を防ぐ
+    for (const p of this.players) {
+      if (!p.alive || p.ball || !p.isHuman) continue;
+      for (const b of this.balls) {
+        if (b.heldBy || b.flying) continue;
+        if (b.pos.distanceTo(p.pos) < 1.5 && canPickUp(p, b)) { p.pickUp(b); break; }
+      }
+    }
 
     // AI ball pickup
     for (const p of this.players) {
@@ -787,15 +818,6 @@ class GameRoom {
           p.aiTimer = CFG.AI_THROW_DELAY[0] + Math.random() * (CFG.AI_THROW_DELAY[1] - CFG.AI_THROW_DELAY[0]);
           break;
         }
-      }
-    }
-
-    // Human ball pickup
-    for (const p of this.players) {
-      if (!p.alive || p.ball || !p.isHuman) continue;
-      for (const b of this.balls) {
-        if (b.heldBy || b.flying) continue;
-        if (b.pos.distanceTo(p.pos) < 1.2 && canPickUp(p, b)) { p.pickUp(b); break; }
       }
     }
 
@@ -916,6 +938,7 @@ class GameRoom {
 
   destroy() {
     if (this._tickIv) { clearInterval(this._tickIv); this._tickIv = null; }
+    if (this._choiceTimeout) { clearTimeout(this._choiceTimeout); this._choiceTimeout = null; }
     for (const p of this.players) { clearTimeout(p._catchTimer); }
   }
 }
@@ -1096,8 +1119,17 @@ wss.on('connection', (ws) => {
       }
 
       case 'input': {
-        if (ws._room && (ws._room.gameState === 'playing' || ws._room.gameState === 'countdown')) {
-          ws._room.inputs[ws._slot] = msg.input;
+        const room = ws._room;
+        if (room && (room.gameState === 'playing' || room.gameState === 'countdown')) {
+          // throw/catch/jumpはワンショット入力。次のtickまでに後続パケットで
+          // 上書きされると消えるため、tickで消費されるまで保持する
+          const prev = room.inputs[ws._slot];
+          if (prev) {
+            msg.input.throw = msg.input.throw || prev.throw;
+            msg.input.catch = msg.input.catch || prev.catch;
+            msg.input.jump = msg.input.jump || prev.jump;
+          }
+          room.inputs[ws._slot] = msg.input;
         }
         break;
       }

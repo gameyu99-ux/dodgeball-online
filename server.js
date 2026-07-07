@@ -232,11 +232,13 @@ class ServerBall {
     this.flying = false;
     this.heldBy = null;
     this.thrownBy = null;
+    this.looseTimer = 999; // 何秒前から地面に落ちているか(AIの反応猶予に使う)
   }
 
   setStart() {
     this.pos.set(0, CFG.BALL_R, 0);
     this.vel.set(0, 0, 0); this.flying = false; this.heldBy = null; this.thrownBy = null;
+    this.looseTimer = 999;
   }
 
   launch(pos, dir, thrower, speed) {
@@ -244,11 +246,13 @@ class ServerBall {
     this.vel.copy(dir).multiplyScalar(speed);
     this.vel.y += 1.5;
     this.flying = true; this.thrownBy = thrower;
+    this.looseTimer = 0;
   }
 
   drop(pos) {
     this.pos.set(pos.x, CFG.BALL_R, pos.z);
     this.vel.set(0, 0, 0); this.flying = false; this.thrownBy = null;
+    this.looseTimer = 0;
   }
 
   update(dt, room) {
@@ -274,9 +278,11 @@ class ServerBall {
         this.pos.y = CFG.BALL_R;
         this.flying = false; this.vel.multiplyScalar(0.3); this.vel.y = 0;
         this.thrownBy = null;
+        this.looseTimer = 0;
       }
       this.checkHitPlayers(room);
     } else {
+      this.looseTimer += dt;
       this.vel.multiplyScalar(0.95);
       this.pos.addScaledVector(this.vel, dt);
       this.pos.y = CFG.BALL_R;
@@ -377,6 +383,7 @@ class ServerBall {
       clamp(this.pos.z, -hLT + 1, hLT - 1)
     );
     this.vel.set(0, 0, 0); this.flying = false; this.thrownBy = null;
+    this.looseTimer = 0;
   }
 }
 
@@ -458,7 +465,16 @@ function findIncomingBall(p, room) {
   for (const b of room.balls) {
     if (!b.flying || !b.thrownBy || b.thrownBy.team === p.team) continue;
     const toP = p.pos.clone().sub(b.pos);
-    if (toP.dot(b.vel.clone().normalize()) > 0 && b.pos.distanceTo(p.pos) < 8) return b;
+    const dist = toP.length();
+    if (dist >= 8) continue;
+    const dir = b.vel.clone().normalize();
+    const along = toP.dot(dir);
+    if (along <= 0) continue;
+    // 弾道の真正面にいる相手だけを「向かってくるボール」とみなす。
+    // 単純な内積>0だけだと視野の広い範囲の敵まで拾ってしまい、
+    // 複数のAIが同時にキャッチ判定を持って成功率が高くなりすぎていた
+    const perp = Math.sqrt(Math.max(0, dist * dist - along * along));
+    if (perp < 1.3) return b;
   }
   return null;
 }
@@ -809,11 +825,12 @@ class GameRoom {
       }
     }
 
-    // AI ball pickup
+    // AI ball pickup — 落ちた直後は少し反応猶予を与え、通信遅延のある
+    // 人間プレイヤーがボールに到達する前にAIが横取りしてしまうのを防ぐ
     for (const p of this.players) {
       if (!p.alive || p.ball || p.isHuman) continue;
       for (const b of this.balls) {
-        if (b.heldBy || b.flying) continue;
+        if (b.heldBy || b.flying || b.looseTimer < 0.12) continue;
         if (b.pos.distanceTo(p.pos) < 1.0 && canPickUp(p, b)) {
           p.pickUp(b);
           p.aiState = 'has_ball';

@@ -401,8 +401,9 @@ const CFG = {
   CATCH_PERFECT: [0.4, 8.5],
   CATCH_OK: [8.5, 10.5],
   AI_THROW_DELAY: [1.6, 3.0],
+  AI_INTERCEPT_THROW_DELAY: [0.6, 1.4],
   AI_DODGE_CHANCE: 0.6,
-  AI_CATCH_CHANCE: 0.25,
+  AI_CATCH_CHANCE: 0.09,
   AI_ACCURACY: 0.7,
   AI_RETURN_CHANCE: 0.7
 };
@@ -1153,7 +1154,14 @@ function findIncomingBall(p) {
     const throwerTeam = b.thrownBy != null ? b.thrownBy.team : (b.throwerTeam != null ? b.throwerTeam : -1);
     if (throwerTeam === -1 || throwerTeam === p.team) continue;
     const toP = p.pos.clone().sub(b.pos);
-    if (toP.dot(b.vel.clone().normalize()) > 0 && b.pos.distanceTo(p.pos) < 8) return b;
+    const dist = toP.length();
+    if (dist >= 8) continue;
+    const dir = b.vel.clone().normalize();
+    const along = toP.dot(dir);
+    if (along <= 0) continue;
+    // 弾道の真正面にいる相手だけを「向かってくるボール」とみなす
+    const perp = Math.sqrt(Math.max(0, dist * dist - along * along));
+    if (perp < 1.3) return b;
   }
   return null;
 }
@@ -1172,7 +1180,8 @@ function updateAI(p, dt) {
           p.pickUp(incoming);
           if (incoming.thrownBy && incoming.thrownBy.inField) incoming.thrownBy.sendToOutfield();
           incoming.thrownBy = null;
-          p.aiState = 'has_ball'; p.aiTimer = 0.1 + Math.random() * 0.3;
+          p.aiState = 'has_ball';
+          p.aiTimer = CFG.AI_INTERCEPT_THROW_DELAY[0] + Math.random() * (CFG.AI_INTERCEPT_THROW_DELAY[1] - CFG.AI_INTERCEPT_THROW_DELAY[0]);
           return;
         }
       }
@@ -2720,7 +2729,7 @@ const net = {
 
   startInputSend() {
     this.stopIntervals();
-    this._inputIv = setInterval(() => this.sendInput(), 50);
+    this._inputIv = setInterval(() => this.sendInput(), 33);
   },
 
   stopIntervals() {

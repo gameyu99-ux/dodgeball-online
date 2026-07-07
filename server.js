@@ -39,8 +39,9 @@ const CFG = {
   CATCH_PERFECT: [0.1, 8.5],
   CATCH_OK: [8.5, 10.5],
   AI_THROW_DELAY: [1.6, 3.0],
+  AI_INTERCEPT_THROW_DELAY: [0.6, 1.4],
   AI_DODGE_CHANCE: 0.6,
-  AI_CATCH_CHANCE: 0.25,
+  AI_CATCH_CHANCE: 0.09,
   AI_ACCURACY: 0.7,
   AI_RETURN_CHANCE: 0.7
 };
@@ -431,9 +432,9 @@ function pickOutfieldTarget(p) {
   }
 }
 
-function canPickUp(p, b) {
+function canPickUp(p, b, maxDist = 1.5) {
   if (b.heldBy || b.flying) return false;
-  if (b.pos.distanceTo(p.pos) > 1.5) return false;
+  if (b.pos.distanceTo(p.pos) > maxDist) return false;
   return ballReachable(p, b);
 }
 
@@ -475,7 +476,8 @@ function updateAI(p, dt, room) {
           p.pickUp(incoming);
           if (incoming.thrownBy && incoming.thrownBy.inField) incoming.thrownBy.sendToOutfield();
           incoming.thrownBy = null;
-          p.aiState = 'has_ball'; p.aiTimer = 0.1 + Math.random() * 0.3;
+          p.aiState = 'has_ball';
+          p.aiTimer = CFG.AI_INTERCEPT_THROW_DELAY[0] + Math.random() * (CFG.AI_INTERCEPT_THROW_DELAY[1] - CFG.AI_INTERCEPT_THROW_DELAY[0]);
           return;
         }
       }
@@ -798,12 +800,12 @@ class GameRoom {
 
     // Human ball pickup — AIより先に判定して人間を優先。
     // クライアント予測(1.2m)はクライアント予測位置基準で、サーバー側の
-    // 位置とは僅かにズレるため、サーバーは広め(1.5m)に取って予測却下を防ぐ
+    // 位置とは僅かにズレるため、サーバーは広め(2.0m)に取って予測却下を防ぐ
     for (const p of this.players) {
       if (!p.alive || p.ball || !p.isHuman) continue;
       for (const b of this.balls) {
         if (b.heldBy || b.flying) continue;
-        if (b.pos.distanceTo(p.pos) < 1.5 && canPickUp(p, b)) { p.pickUp(b); break; }
+        if (canPickUp(p, b, 2.0)) { p.pickUp(b); break; }
       }
     }
 

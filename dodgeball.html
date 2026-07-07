@@ -1905,7 +1905,7 @@ const game = {
         } else if (holder && holder !== humanPlayer) {
           humanPlayer._predictedBall = null; // 他プレイヤーが先に取得、予測取消
           if (humanPlayer.ball === b) humanPlayer.ball = humanPlayer._srvBall || null;
-        } else if (performance.now() - (humanPlayer._predictedAt || 0) > 1800) {
+        } else if (performance.now() - (humanPlayer._predictedAt || 0) > 2500) {
           humanPlayer._predictedBall = null; // タイムアウト、サーバー値を信頼
           humanPlayer.ball = humanPlayer._srvBall || null;
         } else {

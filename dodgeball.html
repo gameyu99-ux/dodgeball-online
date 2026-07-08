@@ -2,7 +2,7 @@
 <html lang="ja">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,maximum-scale=1.0">
+<meta name="viewport" content="width=device-width,initial-scale=1.0,user-scalable=no,maximum-scale=1.0,viewport-fit=cover">
 <title>ドッジボール 3D</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
@@ -181,6 +181,55 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #rank-change-text{font-size:14px;margin-bottom:6px}
 #rank-stats-detail{font-size:12px;opacity:.6;margin-bottom:8px}
 #rank-after{font-size:20px;font-weight:bold}
+
+/* ── メニュー等の各画面のスマホ対応 ── */
+/* iPhoneのノッチ/ホームバー領域を避ける */
+@supports (padding: env(safe-area-inset-bottom)){
+  #controls{padding-bottom:calc(15px + env(safe-area-inset-bottom));padding-left:calc(15px + env(safe-area-inset-left));padding-right:calc(15px + env(safe-area-inset-right))}
+}
+/* 小さい画面: 各画面の文字・ボタン・余白を縮めて1画面に収める */
+@media (max-width:600px), (max-height:640px){
+  #menu h1 img{width:min(320px,68vw)}
+  #menu p{font-size:13px;margin-bottom:14px}
+  #kbd-help{margin-top:8px}
+  #mode-select{gap:12px;margin-bottom:10px}
+  #mode-row-top{gap:12px}
+  .mode-btn{padding:13px 20px;font-size:16px}
+  #settings-panel{margin-top:10px;padding:10px 16px;min-width:min(280px,86vw)}
+  #auth-bar{top:8px;right:8px}
+  #mp-menu h2,#online-select h2,#matchmaking h2{font-size:24px;margin-bottom:12px}
+  .mp-input{font-size:19px;width:170px;padding:10px 14px;margin:6px}
+  .mp-btn{padding:11px 22px;font-size:15px;margin:6px}
+  .mp-btn-back{margin-top:10px}
+  .mp-or{margin:6px 0}
+  .mp-error{margin:4px 0;min-height:16px}
+  #lobby h2{font-size:22px}
+  .room-key-label{margin-top:4px}
+  .room-key-display{font-size:34px;letter-spacing:6px;margin:2px 0 8px}
+  #player-list{gap:10px;margin:8px 0}
+  .team-list{padding:8px}
+  .player-entry{font-size:12px}
+  #lobby-status{margin:4px 0}
+  .mp-btn-start{font-size:18px;padding:12px 30px;margin-top:4px}
+  #rank-display{padding:12px 24px;margin-bottom:14px;min-width:220px}
+  #rank-icon{font-size:36px}
+  #rank-name{font-size:19px}
+  .online-btns{gap:14px;min-width:220px;margin-bottom:10px}
+  #match-count{font-size:38px}
+  #result h2{font-size:32px;margin-bottom:12px}
+  #result p{font-size:16px;margin-bottom:16px}
+  #retry-btn,#home-btn{padding:12px 28px;font-size:16px}
+  #choice-modal .choice-box{padding:20px 24px;margin:0 12px}
+  #choice-modal h3{font-size:20px}
+  #choice-modal button{padding:10px 22px;font-size:15px}
+  #pause-menu h2{font-size:24px;margin-bottom:0}
+  .pause-btn{padding:11px 34px;font-size:16px}
+  #pause-settings{padding:10px 16px;min-width:min(280px,86vw)}
+}
+/* 縦に収まらない場合はスクロールできるように（中央寄せのままだと上端が切れて届かなくなる） */
+@media (max-height:640px){
+  #menu,#mp-menu,#lobby,#online-select,#matchmaking,#result,#pause-menu{justify-content:flex-start;overflow-y:auto;padding-top:12px;padding-bottom:12px}
+}
 </style>
 </head>
 <body>
@@ -265,7 +314,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
       <span class="set-val" id="set-se-val">80%</span>
     </div>
   </div>
-  <p style="font-size:12px;opacity:.5;margin-top:12px">WASD移動 / マウスで視点 / Spaceジャンプ / Shiftしゃがみ / クリック投げ / Eキャッチ</p>
+  <p id="kbd-help" style="font-size:12px;opacity:.5;margin-top:12px">WASD移動 / マウスで視点 / Spaceジャンプ / Shiftしゃがみ / クリック投げ / Eキャッチ</p>
 </div>
 
 <div id="mp-menu">
@@ -1076,6 +1125,9 @@ function setupBtn(id, onP, onR) {
 // タッチ非対応デバイスでは画面上のボタン類を隠す（キーボード+マウスで全操作可能）
 if (!('ontouchstart' in window) && navigator.maxTouchPoints === 0) {
   document.getElementById('controls').style.display = 'none';
+} else {
+  document.getElementById('kbd-help').textContent =
+    '左スティックで移動 / 画面スワイプで視点 / 右のボタンで投げ・キャッチ・ジャンプ';
 }
 
 const lookArea = document.getElementById('look-area');

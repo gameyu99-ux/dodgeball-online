@@ -940,7 +940,6 @@ class Ball {
           if (dist < CFG.CATCH_PERFECT[1] && dist > CFG.CATCH_PERFECT[0]) {
             p.pickUp(this);
             p.catchImmunity = 0.8;
-            if (thrower.inField) thrower.sendToOutfield();
             if (p.isHuman) sfx.catch();
             game.showMsg('NICE CATCH!', '#0f0');
             return;
@@ -1178,7 +1177,6 @@ function updateAI(p, dt) {
       if (dist < 6 && Math.random() < CFG.AI_CATCH_CHANCE * dt * 2) {
         if (dist > CFG.CATCH_PERFECT[0] && dist < CFG.CATCH_PERFECT[1]) {
           p.pickUp(incoming);
-          if (incoming.thrownBy && incoming.thrownBy.inField) incoming.thrownBy.sendToOutfield();
           incoming.thrownBy = null;
           p.aiState = 'has_ball';
           p.aiTimer = CFG.AI_INTERCEPT_THROW_DELAY[0] + Math.random() * (CFG.AI_INTERCEPT_THROW_DELAY[1] - CFG.AI_INTERCEPT_THROW_DELAY[0]);

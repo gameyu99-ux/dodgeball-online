@@ -195,6 +195,17 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #auth-user{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.45);border-radius:8px;padding:7px 12px;font-size:13px}
 #auth-name{color:#8f8;font-weight:bold}
 #btn-logout{padding:4px 10px;font-size:11px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer}
+#btn-email-login{padding:9px 14px;font-size:12px;font-weight:bold;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:8px;cursor:pointer;margin-left:6px}
+#btn-email-login:hover{background:rgba(255,255,255,.25)}
+#email-auth-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:110;flex-direction:column}
+#email-auth-modal.show{display:flex}
+.email-auth-box{background:rgba(20,20,50,.97);border:2px solid rgba(255,255,255,.3);border-radius:16px;padding:26px 30px;text-align:center;color:#fff;width:min(320px,88vw)}
+.email-auth-tabs{display:flex;gap:8px;margin-bottom:16px}
+.email-auth-tab{flex:1;padding:10px;font-size:14px;font-weight:bold;background:rgba(255,255,255,.08);color:rgba(255,255,255,.6);border:none;border-radius:8px;cursor:pointer}
+.email-auth-tab.active{background:rgba(255,255,255,.18);color:#fff}
+.email-input{width:100%;font-size:15px;letter-spacing:normal;text-align:left;margin:0 0 10px;box-sizing:border-box}
+.email-forgot{font-size:12px;opacity:.6;margin:10px 0 0;cursor:pointer;text-decoration:underline}
+.email-forgot:hover{opacity:.9}
 #rank-result{text-align:center;margin-top:10px;margin-bottom:10px}
 #rank-change-text{font-size:14px;margin-bottom:6px}
 #rank-stats-detail{font-size:12px;opacity:.6;margin-bottom:8px}
@@ -215,6 +226,9 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   .mode-btn{padding:13px 20px;font-size:16px}
   #settings-panel{margin-top:10px;padding:10px 16px;min-width:min(280px,86vw)}
   #auth-bar{top:8px;right:8px}
+  #btn-login,#btn-email-login{font-size:11px;padding:7px 10px}
+  .email-auth-box{padding:20px 22px}
+  .email-auth-tab{padding:8px;font-size:13px}
   #mp-menu h2,#online-select h2,#matchmaking h2{font-size:24px;margin-bottom:12px}
   .mp-input{font-size:19px;width:170px;padding:10px 14px;margin:6px}
   .mp-btn{padding:11px 22px;font-size:15px;margin:6px}
@@ -299,6 +313,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   <p>一人称視点ドッジボール ─ 10 vs 10（外野あり）</p>
   <div id="auth-bar">
     <button id="btn-login">G  Googleでログイン</button>
+    <button id="btn-email-login">✉ メールでログイン</button>
     <span id="auth-user" style="display:none">
       <span id="auth-name"></span>
       <button id="btn-logout">ログアウト</button>
@@ -374,6 +389,21 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
     <button class="mode-btn mode-casual" id="btn-casual">カジュアルマッチ</button>
   </div>
   <button class="mp-btn mp-btn-back" id="btn-online-back">戻る</button>
+</div>
+
+<div id="email-auth-modal">
+  <div class="email-auth-box">
+    <div class="email-auth-tabs">
+      <button class="email-auth-tab active" id="tab-login">ログイン</button>
+      <button class="email-auth-tab" id="tab-signup">新規登録</button>
+    </div>
+    <input type="email" id="email-auth-email" class="mp-input email-input" placeholder="メールアドレス" autocomplete="email">
+    <input type="password" id="email-auth-password" class="mp-input email-input" placeholder="パスワード（6文字以上）" autocomplete="current-password">
+    <div class="mp-error" id="email-auth-error"></div>
+    <button class="mp-btn mp-btn-create" id="btn-email-submit">ログイン</button>
+    <p class="email-forgot" id="btn-email-forgot">パスワードをお忘れですか？</p>
+    <button class="mp-btn mp-btn-back" id="btn-email-back">戻る</button>
+  </div>
 </div>
 
 <div id="locker">
@@ -1558,16 +1588,73 @@ function signOutGoogle() {
 
 function updateAuthUI() {
   const loginBtn = document.getElementById('btn-login');
+  const emailBtn = document.getElementById('btn-email-login');
   const userSpan = document.getElementById('auth-user');
   if (!loginBtn || !userSpan) return;
   if (fbUser) {
     loginBtn.style.display = 'none';
+    emailBtn.style.display = 'none';
     userSpan.style.display = 'flex';
     document.getElementById('auth-name').textContent = fbUser.displayName || fbUser.email || 'ユーザー';
   } else {
     loginBtn.style.display = 'block';
+    emailBtn.style.display = 'inline-block';
     userSpan.style.display = 'none';
   }
+}
+
+/* ── メール/パスワード認証 ── */
+const EMAIL_ERROR_JA = {
+  'auth/invalid-email': 'メールアドレスの形式が正しくありません',
+  'auth/user-not-found': 'そのメールアドレスのアカウントが見つかりません',
+  'auth/wrong-password': 'パスワードが違います',
+  'auth/email-already-in-use': 'そのメールアドレスは既に使われています',
+  'auth/weak-password': 'パスワードは6文字以上にしてください',
+  'auth/missing-password': 'パスワードを入力してください',
+  'auth/invalid-credential': 'メールアドレスまたはパスワードが違います',
+  'auth/too-many-requests': '試行回数が多すぎます。しばらくしてから再試行してください',
+};
+function emailErrorText(e) { return EMAIL_ERROR_JA[e.code] || ('エラー: ' + e.message); }
+
+let emailAuthMode = 'login'; // 'login' | 'signup'
+
+function openEmailAuthModal() {
+  document.getElementById('email-auth-error').textContent = '';
+  document.getElementById('email-auth-email').value = '';
+  document.getElementById('email-auth-password').value = '';
+  setEmailAuthMode('login');
+  document.getElementById('email-auth-modal').classList.add('show');
+}
+function closeEmailAuthModal() {
+  document.getElementById('email-auth-modal').classList.remove('show');
+}
+function setEmailAuthMode(mode) {
+  emailAuthMode = mode;
+  document.getElementById('tab-login').classList.toggle('active', mode === 'login');
+  document.getElementById('tab-signup').classList.toggle('active', mode === 'signup');
+  document.getElementById('btn-email-submit').textContent = mode === 'login' ? 'ログイン' : '登録する';
+  document.getElementById('btn-email-forgot').style.display = mode === 'login' ? 'block' : 'none';
+  document.getElementById('email-auth-error').textContent = '';
+}
+function submitEmailAuth() {
+  if (!fbAuth) return;
+  const email = document.getElementById('email-auth-email').value.trim();
+  const password = document.getElementById('email-auth-password').value;
+  const errEl = document.getElementById('email-auth-error');
+  errEl.textContent = '';
+  const action = emailAuthMode === 'login'
+    ? fbAuth.signInWithEmailAndPassword(email, password)
+    : fbAuth.createUserWithEmailAndPassword(email, password);
+  action.then(() => closeEmailAuthModal())
+    .catch(e => { errEl.textContent = emailErrorText(e); });
+}
+function forgotPassword() {
+  const email = document.getElementById('email-auth-email').value.trim();
+  const errEl = document.getElementById('email-auth-error');
+  if (!email) { errEl.textContent = 'メールアドレスを先に入力してください'; return; }
+  fbAuth.sendPasswordResetEmail(email)
+    .then(() => { errEl.style.color = '#4f8'; errEl.textContent = 'パスワード再設定メールを送信しました'; })
+    .catch(e => { errEl.style.color = ''; errEl.textContent = emailErrorText(e); });
 }
 
 /* ── スキン & コイン ── */
@@ -3141,6 +3228,13 @@ game.init();
 initFirebase();
 document.getElementById('btn-login').addEventListener('click', signInGoogle);
 document.getElementById('btn-logout').addEventListener('click', signOutGoogle);
+document.getElementById('btn-email-login').addEventListener('click', openEmailAuthModal);
+document.getElementById('btn-email-back').addEventListener('click', closeEmailAuthModal);
+document.getElementById('tab-login').addEventListener('click', () => setEmailAuthMode('login'));
+document.getElementById('tab-signup').addEventListener('click', () => setEmailAuthMode('signup'));
+document.getElementById('btn-email-submit').addEventListener('click', submitEmailAuth);
+document.getElementById('btn-email-forgot').addEventListener('click', forgotPassword);
+document.getElementById('email-auth-password').addEventListener('keydown', e => { if (e.key === 'Enter') submitEmailAuth(); });
 
 function animate() {
   requestAnimationFrame(animate);

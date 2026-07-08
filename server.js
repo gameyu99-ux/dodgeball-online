@@ -660,7 +660,7 @@ class GameRoom {
     return this.slots.map((ws, i) => {
       if (!ws) return null;
       const info = this.clients.get(ws);
-      return info ? { slot: i, name: info.name } : null;
+      return info ? { slot: i, name: info.name, skin: info.skin || 'default' } : null;
     }).filter(Boolean);
   }
 
@@ -940,7 +940,8 @@ class GameRoom {
         +b.pos.x.toFixed(2), +b.pos.y.toFixed(2), +b.pos.z.toFixed(2),
         +b.vel.x.toFixed(1), +b.vel.y.toFixed(1), +b.vel.z.toFixed(1),
         b.flying ? 1 : 0, b.heldBy ? b.heldBy.id : -1,
-        b.thrownBy ? b.thrownBy.team : -1
+        b.thrownBy ? b.thrownBy.team : -1,
+        b.thrownBy ? b.thrownBy.id : -1 // スキントレイル用に投げた人のスロットも配る
       ]),
       t: +this.gameTime.toFixed(1),
       s: this.gameState,
@@ -1004,11 +1005,11 @@ const queues = {
   ranked: { list: [], timer: null, timerStart: null, broadcastIv: null, ranked: true }
 };
 
-function addToQueue(queueType, ws, name) {
+function addToQueue(queueType, ws, name, skin) {
   removeFromAnyQueue(ws);
   const q = queues[queueType];
   ws._queueType = queueType;
-  q.list.push({ ws, name });
+  q.list.push({ ws, name, skin });
   broadcastQueueStatus(q);
 
   if (q.list.length >= MATCH_MAX) {
@@ -1048,6 +1049,10 @@ function broadcastQueueStatus(q) {
   for (const p of q.list) { if (p.ws.readyState === 1) p.ws.send(data); }
 }
 
+// クライアント申告のスキンID検証（dodgeball.htmlのSKINSと対応）
+const VALID_SKINS = new Set(['default', 'gold', 'sakura', 'neon', 'shadow', 'flame', 'ice']);
+const cleanSkin = s => (typeof s === 'string' && VALID_SKINS.has(s)) ? s : 'default';
+
 function startQueueMatch(q) {
   if (q.timer) { clearTimeout(q.timer); q.timer = null; q.timerStart = null; }
   if (q.list.length === 0) return;
@@ -1064,7 +1069,7 @@ function startQueueMatch(q) {
     mp.ws._room = room;
     mp.ws._slot = slot;
     mp.ws._queueType = null;
-    room.clients.set(mp.ws, { slot, name: mp.name });
+    room.clients.set(mp.ws, { slot, name: mp.name, skin: mp.skin || 'default' });
   }
 
   room.startGame();
@@ -1101,7 +1106,7 @@ wss.on('connection', (ws) => {
         rooms.set(key, ws._room);
         ws._room.hostWs = ws;
         ws._slot = ws._room.assignSlot(ws);
-        ws._room.clients.set(ws, { slot: ws._slot, name: msg.name || 'Host' });
+        ws._room.clients.set(ws, { slot: ws._slot, name: msg.name || 'Host', skin: cleanSkin(msg.skin) });
         ws._room.sendTo(ws, {
           type: 'room_created', key, slot: ws._slot, isHost: true,
           players: ws._room.getSlotList()
@@ -1116,7 +1121,7 @@ wss.on('connection', (ws) => {
         if (r.lobbyState === 'playing') { ws.send(JSON.stringify({ type: 'error', message: 'ゲーム中です' })); return; }
         ws._room = r;
         ws._slot = ws._room.assignSlot(ws);
-        ws._room.clients.set(ws, { slot: ws._slot, name: msg.name || 'Player' });
+        ws._room.clients.set(ws, { slot: ws._slot, name: msg.name || 'Player', skin: cleanSkin(msg.skin) });
         ws._room.sendTo(ws, {
           type: 'room_joined', key: msg.key, slot: ws._slot, isHost: false,
           players: ws._room.getSlotList()
@@ -1159,7 +1164,7 @@ wss.on('connection', (ws) => {
       }
 
       case 'matchmake': {
-        addToQueue(msg.ranked ? 'ranked' : 'casual', ws, msg.name || 'Player');
+        addToQueue(msg.ranked ? 'ranked' : 'casual', ws, msg.name || 'Player', cleanSkin(msg.skin));
         break;
       }
 

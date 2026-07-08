@@ -95,6 +95,24 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .mode-btn:hover{transform:scale(1.05)}
 .mode-solo{background:linear-gradient(135deg,#3498db,#2980b9)}
 .mode-multi{background:linear-gradient(135deg,#e74c3c,#c0392b)}
+.mode-locker{background:linear-gradient(135deg,#8e44ad,#6c3483);padding:12px 30px;font-size:16px}
+#locker{position:fixed;inset:0;background:url('bg.jpg') center/cover no-repeat;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
+#locker::before{content:'';position:absolute;inset:0;background:rgba(0,0,0,.55);z-index:0}
+#locker>*{position:relative;z-index:1}
+#locker h2{font-size:30px;margin-bottom:4px}
+#locker-coins{font-size:20px;font-weight:bold;color:#ffd700;margin-bottom:4px}
+.locker-hint{font-size:12px;opacity:.55;margin-bottom:14px}
+#skin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:12px;width:min(640px,92vw);max-height:58vh;overflow-y:auto;padding:4px}
+.skin-card{background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 8px;text-align:center}
+.skin-card.equipped{border-color:#0f0}
+.skin-swatch{width:54px;height:54px;border-radius:50%;margin:0 auto 8px;border:3px solid rgba(255,255,255,.25)}
+.skin-name{font-size:14px;font-weight:bold;margin-bottom:8px}
+.skin-btn{padding:7px 10px;font-size:13px;font-weight:bold;border:none;border-radius:8px;cursor:pointer;color:#fff;width:100%}
+.skin-btn.buy{background:linear-gradient(135deg,#f1c40f,#e67e22);color:#000}
+.skin-btn.buy:disabled{background:#555;color:#999;cursor:default}
+.skin-btn.equip{background:linear-gradient(135deg,#3498db,#2980b9)}
+.skin-btn.equipped-label{background:#1e8449;cursor:default}
+#coin-gain{color:#ffd700;font-weight:bold;font-size:18px;margin-bottom:14px;display:none}
 @media (pointer:coarse) and (max-width:768px){
   .team-score{font-size:13px;padding:6px 10px}
   #timer{font-size:13px;padding:3px 10px}
@@ -228,7 +246,8 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 }
 /* 縦に収まらない場合はスクロールできるように（中央寄せのままだと上端が切れて届かなくなる） */
 @media (max-height:640px){
-  #menu,#mp-menu,#lobby,#online-select,#matchmaking,#result,#pause-menu{justify-content:flex-start;overflow-y:auto;padding-top:12px;padding-bottom:12px}
+  #menu,#mp-menu,#lobby,#online-select,#matchmaking,#result,#pause-menu,#locker{justify-content:flex-start;overflow-y:auto;padding-top:12px;padding-bottom:12px}
+  #skin-grid{max-height:none;overflow-y:visible}
 }
 </style>
 </head>
@@ -291,6 +310,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
       <button class="mode-btn mode-multi" id="btn-multi">ともだちとプレイ</button>
     </div>
     <button class="mode-btn mode-online" id="btn-online">オンラインでプレイ</button>
+    <button class="mode-btn mode-locker" id="btn-locker">🎨 スキン</button>
   </div>
   <div id="settings-panel">
     <h3>⚙ 設定</h3>
@@ -356,6 +376,14 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   <button class="mp-btn mp-btn-back" id="btn-online-back">戻る</button>
 </div>
 
+<div id="locker">
+  <h2>🎨 スキンロッカー</h2>
+  <div id="locker-coins">🪙 0</div>
+  <p class="locker-hint">コインは試合に出ると獲得できます（勝利・命中でボーナス）</p>
+  <div id="skin-grid"></div>
+  <button class="mp-btn mp-btn-back" id="btn-locker-back">戻る</button>
+</div>
+
 <div id="matchmaking">
   <h2>オンライン対戦</h2>
   <div id="match-status">対戦相手を探しています...</div>
@@ -375,6 +403,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
     <div id="rank-stats-detail"></div>
     <div id="rank-after"></div>
   </div>
+  <p id="coin-gain"></p>
   <div class="result-btns">
     <button id="retry-btn">もう一回</button>
     <button id="home-btn">ホームに戻る</button>
@@ -638,6 +667,29 @@ class Player {
     if (!this.isHuman) scene.add(this.mesh);
   }
 
+  // スキン適用: 脚の色 + 胸の発光バンド。チーム判別を保つためボディ色は変えない
+  applySkin(skinId) {
+    const s = SKINS[skinId] || SKINS.default;
+    this.skinId = SKINS[skinId] ? skinId : 'default';
+    if (this.skinBand) {
+      this.bodyMesh.remove(this.skinBand);
+      this.skinBand.geometry.dispose();
+      this.skinBand.material.dispose();
+      this.skinBand = null;
+    }
+    this.legL.material.color.setHex(s.color !== null ? s.color : 0x333355);
+    if (s.color !== null) {
+      const band = new THREE.Mesh(
+        new THREE.TorusGeometry(0.27, 0.045, 6, 16),
+        new THREE.MeshStandardMaterial({ color: s.color, emissive: s.color, emissiveIntensity: s.glow })
+      );
+      band.rotation.x = Math.PI / 2;
+      band.position.y = 0.25; // bodyMeshローカル座標（しゃがみ時のスケールに追従させる）
+      this.bodyMesh.add(band);
+      this.skinBand = band;
+    }
+  }
+
   setNameLabel(text, isHuman) {
     if (this.nameLabel) { this.mesh.remove(this.nameLabel); this.nameLabel.material.map.dispose(); this.nameLabel.material.dispose(); this.nameLabel = null; }
     if (!text) return;
@@ -898,6 +950,11 @@ class Ball {
       }
       this.trail.geometry.attributes.position.needsUpdate = true;
       this.trail.geometry.setDrawRange(0, Math.min(this.trailPositions.length, 10));
+      // 投げた人のスキンにトレイル色があれば着色
+      const ts = this.thrownBy && SKINS[this.thrownBy.skinId] ? SKINS[this.thrownBy.skinId] : null;
+      const hasSkinTrail = ts && ts.trail !== null;
+      this.trail.material.color.setHex(hasSkinTrail ? ts.trail : 0xff8844);
+      this.trail.material.opacity = hasSkinTrail ? 0.75 : 0.4;
       this.trail.visible = true;
 
       const hWT = TOTAL_W / 2, hLT = TOTAL_L / 2;
@@ -1467,6 +1524,17 @@ function initFirebase() {
       if (merged !== cloudRP) {
         ref.set({ rankRP: merged, name: settings.name, updated: Date.now() }, { merge: true }).catch(() => {});
       }
+      // コイン・スキンのクラウド同期（コインは大きい方、所持スキンは和集合を採用）
+      const d = snap.exists ? snap.data() : {};
+      _coins = Math.max(d.coins || 0, _coins);
+      const cloudOwned = Array.isArray(d.ownedSkins) ? d.ownedSkins : [];
+      _ownedSkins = [...new Set([..._ownedSkins, ...cloudOwned])].filter(id => SKINS[id]);
+      if (!_ownedSkins.includes('default')) _ownedSkins.push('default');
+      if (d.equippedSkin && SKINS[d.equippedSkin] && _ownedSkins.includes(d.equippedSkin) && _equippedSkin === 'default') {
+        _equippedSkin = d.equippedSkin;
+      }
+      saveSkinData();
+      if (document.getElementById('locker').style.display === 'flex') renderLocker();
       if (document.getElementById('online-select').style.display === 'flex') updateRankDisplay();
     } catch (e) {
       console.warn('rank sync failed:', e);
@@ -1499,6 +1567,94 @@ function updateAuthUI() {
   } else {
     loginBtn.style.display = 'block';
     userSpan.style.display = 'none';
+  }
+}
+
+/* ── スキン & コイン ── */
+// カタログはサーバー(server.js VALID_SKINS)と対応。colorはアクセント色、
+// glowは発光強度、trailは投げたボールの残像色（nullなら無し）
+const SKINS = {
+  default: { name: 'ノーマル',   price: 0,    color: null,     glow: 0,   trail: null },
+  gold:    { name: 'ゴールド',   price: 500,  color: 0xffd700, glow: 0.5, trail: 0xffd700 },
+  sakura:  { name: 'サクラ',     price: 600,  color: 0xff9ecb, glow: 0.4, trail: 0xffb7d5 },
+  neon:    { name: 'ネオン',     price: 800,  color: 0x00ff99, glow: 0.9, trail: 0x00ff99 },
+  shadow:  { name: 'シャドウ',   price: 800,  color: 0x8844ff, glow: 0.7, trail: 0x8844ff },
+  flame:   { name: 'フレイム',   price: 1200, color: 0xff5500, glow: 0.8, trail: 0xff6600 },
+  ice:     { name: 'アイス',     price: 1200, color: 0x66e0ff, glow: 0.8, trail: 0x99eeff },
+};
+
+// コイン・所持スキンはランクと同様にlocalStorageを正とし、ログイン中はFirestoreにも同期
+let _coins = parseInt(localStorage.getItem('db_coins') || '0', 10) || 0;
+let _ownedSkins = (() => {
+  try {
+    const a = JSON.parse(localStorage.getItem('db_skins_owned') || '["default"]');
+    return Array.isArray(a) ? a.filter(id => SKINS[id]) : ['default'];
+  } catch (e) { return ['default']; }
+})();
+if (!_ownedSkins.includes('default')) _ownedSkins.push('default');
+let _equippedSkin = localStorage.getItem('db_skin_equipped') || 'default';
+if (!SKINS[_equippedSkin] || !_ownedSkins.includes(_equippedSkin)) _equippedSkin = 'default';
+
+function saveSkinData() {
+  localStorage.setItem('db_coins', String(_coins));
+  localStorage.setItem('db_skins_owned', JSON.stringify(_ownedSkins));
+  localStorage.setItem('db_skin_equipped', _equippedSkin);
+  if (fbUser && fbDB) {
+    fbDB.collection('users').doc(fbUser.uid)
+      .set({ coins: _coins, ownedSkins: _ownedSkins, equippedSkin: _equippedSkin, updated: Date.now() }, { merge: true })
+      .catch(() => {});
+  }
+}
+function addCoins(n) { _coins = Math.max(0, _coins + n); saveSkinData(); }
+function buySkin(id) {
+  const s = SKINS[id];
+  if (!s || _ownedSkins.includes(id) || _coins < s.price) return false;
+  _coins -= s.price;
+  _ownedSkins.push(id);
+  saveSkinData();
+  return true;
+}
+function equipSkin(id) {
+  if (!SKINS[id] || !_ownedSkins.includes(id)) return;
+  _equippedSkin = id;
+  saveSkinData();
+}
+
+function renderLocker() {
+  const grid = document.getElementById('skin-grid');
+  if (!grid) return;
+  document.getElementById('locker-coins').textContent = '🪙 ' + _coins;
+  grid.innerHTML = '';
+  for (const [id, s] of Object.entries(SKINS)) {
+    const owned = _ownedSkins.includes(id);
+    const equipped = _equippedSkin === id;
+    const card = document.createElement('div');
+    card.className = 'skin-card' + (equipped ? ' equipped' : '');
+    const sw = document.createElement('div');
+    sw.className = 'skin-swatch';
+    const hex = s.color !== null ? '#' + s.color.toString(16).padStart(6, '0') : '#556';
+    sw.style.background = hex;
+    if (s.glow > 0.3) sw.style.boxShadow = `0 0 ${Math.round(8 + s.glow * 14)}px ${hex}`;
+    const nm = document.createElement('div');
+    nm.className = 'skin-name';
+    nm.textContent = s.name;
+    const btn = document.createElement('button');
+    btn.className = 'skin-btn';
+    if (equipped) {
+      btn.classList.add('equipped-label');
+      btn.textContent = '装備中';
+    } else if (owned) {
+      btn.classList.add('equip');
+      btn.textContent = '装備する';
+      btn.onclick = () => { equipSkin(id); renderLocker(); };
+    } else {
+      btn.classList.add('buy');
+      btn.textContent = '🪙 ' + s.price;
+      btn.disabled = _coins < s.price;
+      btn.onclick = () => { if (buySkin(id)) { equipSkin(id); renderLocker(); } };
+    }
+    card.append(sw, nm, btn);
+    grid.appendChild(card);
   }
 }
 
@@ -1602,6 +1758,15 @@ const game = {
   },
 
   setupUI() {
+    document.getElementById('btn-locker').addEventListener('click', () => {
+      document.getElementById('menu').style.display = 'none';
+      renderLocker();
+      document.getElementById('locker').style.display = 'flex';
+    });
+    document.getElementById('btn-locker-back').addEventListener('click', () => {
+      document.getElementById('locker').style.display = 'none';
+      document.getElementById('menu').style.display = 'flex';
+    });
     document.getElementById('btn-solo').addEventListener('click', () => {
       this.mode = 'solo'; this.startGame();
     });
@@ -1624,7 +1789,7 @@ const game = {
       document.getElementById('match-count').textContent = '0 / 16';
       document.getElementById('match-countdown').textContent = '';
       document.getElementById('match-status').textContent = '対戦相手を探しています...';
-      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: true }); });
+      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: true, skin: _equippedSkin }); });
     });
     document.getElementById('btn-casual').addEventListener('click', () => {
       this.ranked = false;
@@ -1634,7 +1799,7 @@ const game = {
       document.getElementById('match-count').textContent = '0 / 16';
       document.getElementById('match-countdown').textContent = '';
       document.getElementById('match-status').textContent = '対戦相手を探しています...';
-      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: false }); });
+      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: false, skin: _equippedSkin }); });
     });
     document.getElementById('btn-online-back').addEventListener('click', () => {
       document.getElementById('online-select').style.display = 'none';
@@ -1740,6 +1905,7 @@ const game = {
       players[players.length-1].setStartPos(i);
     }
     humanPlayer = players[0];
+    humanPlayer.applySkin(_equippedSkin);
 
     // 各チームの末尾2人を外野スタートにする（人間プレイヤー除く）
     for (let i = CFG.TEAM_SIZE - INITIAL_OUTFIELD; i < CFG.TEAM_SIZE; i++) {
@@ -1796,10 +1962,13 @@ const game = {
     if (!humanPlayer.isHuman) { humanPlayer.isHuman = true; }
     if (!humanPlayer.mesh.parent) scene.add(humanPlayer.mesh);
 
+    humanPlayer.applySkin(_equippedSkin);
     players.forEach(p => {
       if (p.id === mySlot) return;
       const name = net.slotNames.get(p.id);
       if (name) p.setNameLabel(name, true);
+      const skin = net.slotSkins.get(p.id);
+      if (skin) p.applySkin(skin);
     });
 
     for (let i = 0; i < CFG.BALL_COUNT; i++) {
@@ -2046,6 +2215,8 @@ const game = {
       b.flying = !!d[6];
       if (isNew) b.throwerTeam = d[8] != null ? d[8] : -1;
       if (!b.flying) b.throwerTeam = -1;
+      if (isNew) b.throwerSlot = d[9] != null ? d[9] : -1;
+      if (!b.flying) b.throwerSlot = -1;
       if (holder) {
         const hp = holder, fwd = hp.getForward();
         b.pos.set(
@@ -2073,6 +2244,11 @@ const game = {
         }
         b.trail.geometry.attributes.position.needsUpdate = true;
         b.trail.geometry.setDrawRange(0, Math.min(b.trailPositions.length, 10));
+        const thrower = b.throwerSlot >= 0 && b.throwerSlot < players.length ? players[b.throwerSlot] : null;
+        const ts = thrower && SKINS[thrower.skinId] ? SKINS[thrower.skinId] : null;
+        const hasSkinTrail = ts && ts.trail !== null;
+        b.trail.material.color.setHex(hasSkinTrail ? ts.trail : 0xff8844);
+        b.trail.material.opacity = hasSkinTrail ? 0.75 : 0.4;
       }
     }
     this.gameTime = st.t;
@@ -2328,6 +2504,16 @@ const game = {
     }
     if (pointerLocked) document.exitPointerLock();
     document.getElementById('pause-btn').style.display = 'none';
+    // コイン獲得（ソロはここで確定。マルチ/オンラインはgame_end_statsで付与）
+    const cg = document.getElementById('coin-gain');
+    if (this.mode === 'solo') {
+      const gain = (won ? 40 : 10) + (this.hitCount || 0) * 5;
+      addCoins(gain);
+      cg.textContent = `🪙 +${gain} コイン`;
+      cg.style.display = 'block';
+    } else {
+      cg.style.display = 'none';
+    }
     if (this.mode === 'multi' || this.mode === 'online') {
       net.stopIntervals();
     }
@@ -2666,6 +2852,7 @@ const net = {
   roomKey: '',
   remoteSlots: new Set(),
   slotNames: new Map(),
+  slotSkins: new Map(),
   clientEvents: [],
   lastRecvState: null,
   recvSeq: 0,
@@ -2700,8 +2887,8 @@ const net = {
     if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));
   },
 
-  createRoom() { this.send({ type: 'create_room', name: settings.name || 'Host' }); },
-  joinRoom(key) { this.send({ type: 'join_room', key, name: settings.name || 'Player' }); },
+  createRoom() { this.send({ type: 'create_room', name: settings.name || 'Host', skin: _equippedSkin }); },
+  joinRoom(key) { this.send({ type: 'join_room', key, name: settings.name || 'Player', skin: _equippedSkin }); },
 
   getHumanSlots() {
     const slots = [this.mySlot];
@@ -2717,7 +2904,8 @@ const net = {
         this.roomKey = msg.key;
         this.remoteSlots.clear();
         this.slotNames.clear();
-        if (msg.players) msg.players.forEach(p => this.slotNames.set(p.slot, p.name));
+        this.slotSkins.clear();
+        if (msg.players) msg.players.forEach(p => { this.slotNames.set(p.slot, p.name); if (p.skin) this.slotSkins.set(p.slot, p.skin); });
         showLobby(msg.key, true, msg.players);
         break;
 
@@ -2727,13 +2915,14 @@ const net = {
         this.roomKey = msg.key;
         this.remoteSlots.clear();
         this.slotNames.clear();
-        if (msg.players) msg.players.forEach(p => { this.slotNames.set(p.slot, p.name); if (p.slot !== this.mySlot) this.remoteSlots.add(p.slot); });
+        this.slotSkins.clear();
+        if (msg.players) msg.players.forEach(p => { this.slotNames.set(p.slot, p.name); if (p.skin) this.slotSkins.set(p.slot, p.skin); if (p.slot !== this.mySlot) this.remoteSlots.add(p.slot); });
         showLobby(msg.key, false, msg.players);
         break;
 
       case 'player_joined':
         this.remoteSlots.add(msg.slot);
-        if (msg.players) msg.players.forEach(p => this.slotNames.set(p.slot, p.name));
+        if (msg.players) msg.players.forEach(p => { this.slotNames.set(p.slot, p.name); if (p.skin) this.slotSkins.set(p.slot, p.skin); });
         updateLobbyPlayers(msg.players);
         break;
 
@@ -2752,7 +2941,7 @@ const net = {
 
       case 'game_start':
         game.mode = 'multi';
-        if (msg.players) msg.players.forEach(p => this.slotNames.set(p.slot, p.name));
+        if (msg.players) msg.players.forEach(p => { this.slotNames.set(p.slot, p.name); if (p.skin) this.slotSkins.set(p.slot, p.skin); });
         game.startMultiplayerGame(this.mySlot, msg.players.map(p => p.slot));
         break;
 
@@ -2786,8 +2975,10 @@ const net = {
         this.roomKey = msg.key;
         this.remoteSlots.clear();
         this.slotNames.clear();
+        this.slotSkins.clear();
         if (msg.players) msg.players.forEach(p => {
           this.slotNames.set(p.slot, p.name);
+          if (p.skin) this.slotSkins.set(p.slot, p.skin);
           if (p.slot !== this.mySlot) this.remoteSlots.add(p.slot);
         });
         game.mode = 'online';
@@ -2796,6 +2987,15 @@ const net = {
         break;
 
       case 'game_end_stats': {
+        // コイン獲得（ランク/カジュアル/ともだち共通）
+        if (msg.stats) {
+          const gain = (msg.won ? 60 : 20) +
+            ((msg.stats.infieldHits || 0) + (msg.stats.outfieldHits || 0)) * 5;
+          addCoins(gain);
+          const cg = document.getElementById('coin-gain');
+          cg.textContent = `🪙 +${gain} コイン`;
+          cg.style.display = 'block';
+        }
         if (msg.ranked) {
           const oldRP = getRankRP();
           const rpGain = calcRPGain(msg.stats, msg.won);

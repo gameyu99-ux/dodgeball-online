@@ -25,10 +25,9 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #catch-indicator.far #catch-ring{border-color:#f80;box-shadow:0 0 10px rgba(255,136,0,.2)}
 #controls{position:fixed;bottom:0;left:0;right:0;display:flex;justify-content:space-between;align-items:flex-end;padding:15px;pointer-events:none;z-index:10}
 .ctrl-group{pointer-events:auto;display:flex;flex-direction:column;align-items:center;gap:4px}
-.dpad{display:grid;grid-template-columns:repeat(3,52px);grid-template-rows:repeat(3,52px);gap:3px}
-.dpad-btn{background:rgba(255,255,255,.18);border:2px solid rgba(255,255,255,.3);border-radius:10px;color:#fff;font-size:20px;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent}
-.dpad-btn:active,.dpad-btn.pressed{background:rgba(255,255,255,.45)}
-.dpad-btn.empty{background:transparent;border:none}
+#joystick{width:150px;height:150px;border-radius:50%;background:rgba(255,255,255,.10);border:2px solid rgba(255,255,255,.25);position:relative;touch-action:none;-webkit-tap-highlight-color:transparent}
+#joy-knob{width:62px;height:62px;border-radius:50%;background:rgba(255,255,255,.35);border:2px solid rgba(255,255,255,.5);position:absolute;left:50%;top:50%;transform:translate(-50%,-50%);pointer-events:none}
+#joy-knob.released{transition:transform .1s}
 .action-btns{display:flex;flex-direction:column;gap:8px;align-items:flex-end}
 .act-btn{width:64px;height:64px;border-radius:50%;border:2px solid rgba(255,255,255,.4);color:#fff;font-size:11px;font-weight:bold;display:flex;align-items:center;justify-content:center;cursor:pointer;-webkit-tap-highlight-color:transparent;text-align:center;line-height:1.2}
 .act-btn:active,.act-btn.pressed{transform:scale(.92)}
@@ -102,7 +101,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   #pos-label{font-size:11px;padding:3px 10px}
   #ball-status{font-size:15px;padding:7px 14px;bottom:210px}
   #hit-counter{font-size:16px;padding:7px 16px;bottom:250px}
-  .dpad{grid-template-columns:repeat(3,62px);grid-template-rows:repeat(3,62px)}
+  #joystick{width:160px;height:160px}
   .act-btn{width:60px;height:60px;font-size:11px}
   #crosshair{width:44px;height:44px}
   #msg{font-size:56px}
@@ -209,17 +208,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 
 <div id="controls">
   <div class="ctrl-group">
-    <div class="dpad">
-      <div class="dpad-btn empty"></div>
-      <div class="dpad-btn" id="btn-up">▲</div>
-      <div class="dpad-btn empty"></div>
-      <div class="dpad-btn" id="btn-left">◀</div>
-      <div class="dpad-btn empty"></div>
-      <div class="dpad-btn" id="btn-right">▶</div>
-      <div class="dpad-btn empty"></div>
-      <div class="dpad-btn" id="btn-down">▼</div>
-      <div class="dpad-btn empty"></div>
-    </div>
+    <div id="joystick"><div id="joy-knob"></div></div>
   </div>
   <div class="ctrl-group">
     <div class="action-btns">
@@ -983,6 +972,8 @@ const btnState = {up:false, down:false, left:false, right:false};
 let pendingJump = false;
 let pendingThrow = false;
 let pendingCatch = false;
+// タッチ投げのエイム補助: 投げた瞬間だけ補正済みyaw/pitchをサーバーに送る
+let pendingAimYaw = null, pendingAimPitch = 0;
 
 // マウスドラッグで視点移動
 let mouseDragging = false, lastMX = 0, lastMY = 0, dragMoved = false;
@@ -1022,13 +1013,55 @@ document.addEventListener('mousemove', e => {
   }
 });
 
-['btn-up','btn-down','btn-left','btn-right'].forEach(id => {
-  const el = document.getElementById(id), dir = id.replace('btn-','');
-  const dn = e => { e.preventDefault(); btnState[dir] = true; el.classList.add('pressed'); };
-  const up = e => { e.preventDefault(); btnState[dir] = false; el.classList.remove('pressed'); };
-  el.addEventListener('touchstart',dn); el.addEventListener('mousedown',dn);
-  el.addEventListener('touchend',up); el.addEventListener('mouseup',up);
-  el.addEventListener('touchcancel',up); el.addEventListener('mouseleave',up);
+// バーチャルジョイスティック: 指1本で8方向移動。指をスライドしても追従する
+const joyEl = document.getElementById('joystick');
+const joyKnob = document.getElementById('joy-knob');
+let joyTouchId = null;
+
+function joyUpdate(cx, cy) {
+  const r = joyEl.getBoundingClientRect();
+  const max = r.width / 2;
+  const dx = cx - (r.left + max), dy = cy - (r.top + r.height / 2);
+  const len = Math.hypot(dx, dy) || 1;
+  const cl = Math.min(len, max);
+  const nx = dx / len, ny = dy / len;
+  joyKnob.classList.remove('released');
+  joyKnob.style.transform = `translate(calc(-50% + ${nx * cl}px), calc(-50% + ${ny * cl}px))`;
+  const on = cl > max * 0.22; // デッドゾーン
+  btnState.up    = on && ny < -0.38;
+  btnState.down  = on && ny >  0.38;
+  btnState.left  = on && nx < -0.38;
+  btnState.right = on && nx >  0.38;
+}
+function joyReset() {
+  joyTouchId = null;
+  joyKnob.classList.add('released');
+  joyKnob.style.transform = 'translate(-50%,-50%)';
+  btnState.up = btnState.down = btnState.left = btnState.right = false;
+}
+joyEl.addEventListener('touchstart', e => {
+  e.preventDefault();
+  if (joyTouchId !== null) return;
+  const t = e.changedTouches[0];
+  joyTouchId = t.identifier;
+  joyUpdate(t.clientX, t.clientY);
+}, {passive: false});
+joyEl.addEventListener('touchmove', e => {
+  e.preventDefault();
+  for (const t of e.changedTouches) if (t.identifier === joyTouchId) joyUpdate(t.clientX, t.clientY);
+}, {passive: false});
+joyEl.addEventListener('touchend', e => {
+  for (const t of e.changedTouches) if (t.identifier === joyTouchId) joyReset();
+});
+joyEl.addEventListener('touchcancel', () => joyReset());
+joyEl.addEventListener('mousedown', e => {
+  e.preventDefault();
+  joyTouchId = 'mouse';
+  joyUpdate(e.clientX, e.clientY);
+  const mm = ev => { if (joyTouchId === 'mouse') joyUpdate(ev.clientX, ev.clientY); };
+  const mu = () => { joyReset(); document.removeEventListener('mousemove', mm); document.removeEventListener('mouseup', mu); };
+  document.addEventListener('mousemove', mm);
+  document.addEventListener('mouseup', mu);
 });
 
 function setupBtn(id, onP, onR) {
@@ -1040,6 +1073,11 @@ function setupBtn(id, onP, onR) {
   el.addEventListener('touchcancel',up); el.addEventListener('mouseleave',up);
 }
 
+// タッチ非対応デバイスでは画面上のボタン類を隠す（キーボード+マウスで全操作可能）
+if (!('ontouchstart' in window) && navigator.maxTouchPoints === 0) {
+  document.getElementById('controls').style.display = 'none';
+}
+
 const lookArea = document.getElementById('look-area');
 // マウスドラッグ視点移動：look-area がcanvasより前面にあるのでここで受け取る
 lookArea.addEventListener('mousedown', e => {
@@ -1049,22 +1087,81 @@ lookArea.addEventListener('mousedown', e => {
   pressMX = e.clientX; pressMY = e.clientY;
   e.preventDefault();
 });
+const TOUCH_LOOK_SPD = 1.4; // スワイプ視点の速さ（旧0.5は遅すぎて振り向きに何往復も必要だった）
 lookArea.addEventListener('touchstart', e => {
   if (touchLook.active) return;
   const t = e.changedTouches[0];
-  touchLook = {active:true, startX:t.clientX, startY:t.clientY, id:t.identifier};
+  touchLook = {active:true, startX:t.clientX, startY:t.clientY, id:t.identifier,
+               t0:performance.now(), moved:0, pressX:t.clientX, pressY:t.clientY};
   e.preventDefault();
 }, {passive: false});
 lookArea.addEventListener('touchmove', e => {
   for (const t of e.changedTouches) if (t.identifier === touchLook.id) {
-    mouseDX += (t.clientX - touchLook.startX)*0.5;
-    mouseDY += (t.clientY - touchLook.startY)*0.5;
+    mouseDX += (t.clientX - touchLook.startX)*TOUCH_LOOK_SPD;
+    mouseDY += (t.clientY - touchLook.startY)*TOUCH_LOOK_SPD;
     touchLook.startX = t.clientX; touchLook.startY = t.clientY;
+    touchLook.moved = Math.max(touchLook.moved, Math.hypot(t.clientX - touchLook.pressX, t.clientY - touchLook.pressY));
   }
   e.preventDefault();
 }, {passive: false});
-lookArea.addEventListener('touchend', e => { for (const t of e.changedTouches) if (t.identifier===touchLook.id) touchLook.active=false; });
+lookArea.addEventListener('touchend', e => {
+  for (const t of e.changedTouches) if (t.identifier === touchLook.id) {
+    touchLook.active = false;
+    // 短いタップ = 投げ/キャッチ（PCのクリック投げと同等の操作をタッチにも）
+    if (performance.now() - touchLook.t0 < 250 && touchLook.moved < 12) touchTapAction();
+  }
+});
 lookArea.addEventListener('touchcancel', () => { touchLook.active = false; });
+
+// タッチのタップ操作: ボール所持中なら投げ、未所持ならキャッチ試行
+function touchTapAction() {
+  if ((game.state !== 'playing' && game.state !== 'playing_client') || game.paused) return;
+  if (!humanPlayer || !humanPlayer.alive) return;
+  if (humanPlayer.ball) doAssistedThrow();
+  else doCatchAttempt();
+}
+
+// タッチエイム補助: 視線から±14°以内で最も近い敵内野へ投球方向を6割寄せる
+function assistedAim() {
+  const eye = humanPlayer.pos.clone(); eye.y += humanPlayer.eyeH;
+  const base = humanPlayer.getLookDir();
+  let best = null, bestAng = 0.25;
+  for (const t of players) {
+    if (t === humanPlayer || !t.alive || !t.inField || t.team === humanPlayer.team) continue;
+    const to = new THREE.Vector3(t.pos.x, t.pos.y + t.height * 0.55, t.pos.z).sub(eye);
+    const d = to.length();
+    if (d < 2 || d > 28) continue;
+    to.normalize();
+    const ang = Math.acos(THREE.MathUtils.clamp(base.dot(to), -1, 1));
+    if (ang < bestAng) { bestAng = ang; best = to; }
+  }
+  if (!best) return null;
+  const dir = base.lerp(best, 0.6).normalize();
+  return {
+    dir,
+    yaw: Math.atan2(-dir.x, -dir.z),
+    pitch: Math.asin(THREE.MathUtils.clamp(dir.y, -1, 1))
+  };
+}
+
+function doAssistedThrow() {
+  if (!humanPlayer || !humanPlayer.alive || !humanPlayer.ball) return;
+  const aim = assistedAim();
+  if (game.mode === 'multi' || game.mode === 'online') {
+    pendingThrow = true;
+    if (aim) { pendingAimYaw = aim.yaw; pendingAimPitch = aim.pitch; }
+  } else {
+    humanPlayer.throwBall(aim ? aim.dir : humanPlayer.getLookDir());
+  }
+}
+
+function doCatchAttempt() {
+  if (!humanPlayer || !humanPlayer.alive) return;
+  if (game.state !== 'playing' && game.state !== 'playing_client') return;
+  humanPlayer.catchAttempt = true;
+  setTimeout(() => { if (humanPlayer) humanPlayer.catchAttempt = false; }, 800);
+  if (game.mode === 'multi' || game.mode === 'online') pendingCatch = true;
+}
 
 /* ── AI ── */
 
@@ -1574,19 +1671,8 @@ const game = {
       () => { if (humanPlayer && humanPlayer.alive) humanPlayer.setCrouch(true); },
       () => { if (humanPlayer && humanPlayer.alive) humanPlayer.setCrouch(false); }
     );
-    setupBtn('btn-throw', () => {
-      if (humanPlayer && humanPlayer.alive && humanPlayer.ball) {
-        if (this.mode === 'multi' || this.mode === 'online') { pendingThrow = true; }
-        else { humanPlayer.throwBall(humanPlayer.getLookDir()); }
-      }
-    });
-    setupBtn('btn-catch', () => {
-      if (humanPlayer && humanPlayer.alive && (this.state === 'playing' || this.state === 'playing_client')) {
-        humanPlayer.catchAttempt = true;
-        setTimeout(() => { if (humanPlayer) humanPlayer.catchAttempt = false; }, 800);
-        if (this.mode === 'multi' || this.mode === 'online') pendingCatch = true;
-      }
-    });
+    setupBtn('btn-throw', () => doAssistedThrow());
+    setupBtn('btn-catch', () => doCatchAttempt());
 
     document.getElementById('btn-return').addEventListener('click', () => {
       if (this.mode === 'multi' || this.mode === 'online') { net.send({ type: 'choice_result', returnToField: true }); document.getElementById('choice-modal').classList.remove('show'); }
@@ -2708,6 +2794,10 @@ const net = {
     const jmp = !!keys['Space'] || pendingJump; pendingJump = false;
     const thr = pendingThrow; pendingThrow = false;
     const cat = pendingCatch; pendingCatch = false;
+    // タッチ投げのエイム補助角度は投げるパケットにだけ乗せる
+    const aimYaw = (thr && pendingAimYaw !== null) ? pendingAimYaw : humanPlayer.yaw;
+    const aimPitch = (thr && pendingAimYaw !== null) ? pendingAimPitch : humanPlayer.pitch;
+    if (thr) { pendingAimYaw = null; }
     this.send({
       type: 'input',
       input: {
@@ -2719,8 +2809,8 @@ const net = {
         crouch: !!(keys['ShiftLeft'] || keys['ShiftRight'] || keys['KeyC'] || document.getElementById('btn-crouch').classList.contains('pressed')),
         throw: thr,
         catch: cat,
-        yaw: humanPlayer.yaw,
-        pitch: humanPlayer.pitch
+        yaw: aimYaw,
+        pitch: aimPitch
       }
     });
   },

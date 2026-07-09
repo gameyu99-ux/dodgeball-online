@@ -538,7 +538,7 @@ scene.add(new THREE.PointLight(0x4488ff, 0.3, 30).translateX(-6).translateY(8));
 scene.add(new THREE.PointLight(0xff4444, 0.3, 30).translateX(6).translateY(8));
 
 function updateCamera() {
-  camera.fov = isMobile() ? 32 : 78;
+  camera.fov = isMobile() ? 40 : 78;
   camera.aspect = window.innerWidth / window.innerHeight;
   camera.updateProjectionMatrix();
   renderer.setSize(window.innerWidth, window.innerHeight);

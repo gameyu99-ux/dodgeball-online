@@ -660,7 +660,7 @@ class GameRoom {
     return this.slots.map((ws, i) => {
       if (!ws) return null;
       const info = this.clients.get(ws);
-      return info ? { slot: i, name: info.name, skin: info.skin || 'default' } : null;
+      return info ? { slot: i, name: info.name, skin: info.skin || { ...COS_DEFAULTS } } : null;
     }).filter(Boolean);
   }
 
@@ -1049,9 +1049,27 @@ function broadcastQueueStatus(q) {
   for (const p of q.list) { if (p.ws.readyState === 1) p.ws.send(data); }
 }
 
-// クライアント申告のスキンID検証（dodgeball.htmlのSKINSと対応）
-const VALID_SKINS = new Set(['default', 'gold', 'sakura', 'neon', 'shadow', 'flame', 'ice']);
-const cleanSkin = s => (typeof s === 'string' && VALID_SKINS.has(s)) ? s : 'default';
+// クライアント申告のコスメ検証（dodgeball.htmlのCOSMETICSと対応）
+const VALID_COSMETICS = {
+  head: new Set(['none', 'cap', 'band', 'halo', 'horns', 'crown']),
+  body: new Set(['default', 'gold', 'sakura', 'neon', 'shadow', 'flame', 'ice']),
+  throwfx: new Set(['default', 'gold', 'sakura', 'neon', 'shadow', 'flame', 'ice']),
+  hitfx: new Set(['default', 'gold', 'sakura', 'neon', 'shadow', 'flame', 'ice']),
+};
+const COS_DEFAULTS = { head: 'none', body: 'default', throwfx: 'default', hitfx: 'default' };
+function cleanSkin(s) {
+  const out = { ...COS_DEFAULTS };
+  if (s && typeof s === 'object') {
+    for (const k of Object.keys(out)) {
+      if (typeof s[k] === 'string' && VALID_COSMETICS[k].has(s[k])) out[k] = s[k];
+    }
+  } else if (typeof s === 'string') {
+    // 旧クライアント互換: 単一スキンIDは胴+投げに割り当てる
+    if (VALID_COSMETICS.body.has(s)) out.body = s;
+    if (VALID_COSMETICS.throwfx.has(s)) out.throwfx = s;
+  }
+  return out;
+}
 
 function startQueueMatch(q) {
   if (q.timer) { clearTimeout(q.timer); q.timer = null; q.timerStart = null; }
@@ -1069,7 +1087,7 @@ function startQueueMatch(q) {
     mp.ws._room = room;
     mp.ws._slot = slot;
     mp.ws._queueType = null;
-    room.clients.set(mp.ws, { slot, name: mp.name, skin: mp.skin || 'default' });
+    room.clients.set(mp.ws, { slot, name: mp.name, skin: mp.skin || { ...COS_DEFAULTS } });
   }
 
   room.startGame();

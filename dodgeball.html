@@ -102,7 +102,22 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #locker h2{font-size:30px;margin-bottom:4px}
 #locker-coins{font-size:20px;font-weight:bold;color:#ffd700;margin-bottom:4px}
 .locker-hint{font-size:12px;opacity:.55;margin-bottom:14px}
-#skin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(128px,1fr));gap:12px;width:min(640px,92vw);max-height:58vh;overflow-y:auto;padding:4px}
+#locker-main{display:flex;gap:16px;width:min(780px,94vw);align-items:stretch}
+#locker-preview{flex:0 0 42%;background:rgba(0,0,0,.35);border:2px solid rgba(255,255,255,.15);border-radius:14px;overflow:hidden;min-height:300px}
+#locker-canvas{width:100%;height:100%;display:block}
+#locker-right{flex:1;display:flex;flex-direction:column;min-width:0}
+#locker-tabs{display:flex;gap:6px;margin-bottom:10px}
+.locker-tab{flex:1;padding:8px 4px;font-size:13px;font-weight:bold;background:rgba(255,255,255,.08);color:rgba(255,255,255,.65);border:2px solid transparent;border-radius:10px;cursor:pointer;display:flex;flex-direction:column;align-items:center;gap:2px}
+.locker-tab .locker-tab-item{font-size:10px;font-weight:normal;opacity:.7}
+.locker-tab.active{background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.4)}
+#skin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;max-height:52vh;overflow-y:auto;padding:4px}
+.skin-swatch.emoji{display:flex;align-items:center;justify-content:center;font-size:30px;background:rgba(255,255,255,.1)}
+@media (max-width:600px) and (orientation:portrait){
+  #locker{justify-content:flex-start;overflow-y:auto;padding-top:12px;padding-bottom:12px}
+  #locker-main{flex-direction:column}
+  #locker-preview{flex:none;height:220px;min-height:0}
+  #skin-grid{max-height:none;overflow-y:visible}
+}
 .skin-card{background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 8px;text-align:center}
 .skin-card.equipped{border-color:#0f0}
 .skin-swatch{width:54px;height:54px;border-radius:50%;margin:0 auto 8px;border:3px solid rgba(255,255,255,.25)}
@@ -410,7 +425,18 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   <h2>🎨 スキンロッカー</h2>
   <div id="locker-coins">🪙 0</div>
   <p class="locker-hint">コインは試合に出ると獲得できます（勝利・命中でボーナス）</p>
-  <div id="skin-grid"></div>
+  <div id="locker-main">
+    <div id="locker-preview"><canvas id="locker-canvas"></canvas></div>
+    <div id="locker-right">
+      <div id="locker-tabs">
+        <button class="locker-tab" data-cat="head">頭<span class="locker-tab-item"></span></button>
+        <button class="locker-tab" data-cat="body">胴<span class="locker-tab-item"></span></button>
+        <button class="locker-tab" data-cat="throwfx">投げ<span class="locker-tab-item"></span></button>
+        <button class="locker-tab" data-cat="hitfx">ヒット<span class="locker-tab-item"></span></button>
+      </div>
+      <div id="skin-grid"></div>
+    </div>
+  </div>
   <button class="mp-btn mp-btn-back" id="btn-locker-back">戻る</button>
 </div>
 
@@ -701,26 +727,86 @@ class Player {
     if (!this.isHuman) scene.add(this.mesh);
   }
 
-  // スキン適用: 脚の色 + 胸の発光バンド。チーム判別を保つためボディ色は変えない
-  applySkin(skinId) {
-    const s = SKINS[skinId] || SKINS.default;
-    this.skinId = SKINS[skinId] ? skinId : 'default';
+  // コスメ適用: 胴=脚の色+胸の発光バンド、頭=アクセサリメッシュ。
+  // チーム判別を保つためボディ色そのものは変えない
+  applyCosmetics(cos) {
+    const c = normalizeCosmetics(cos);
+    this.cosmetics = c;
+
+    // 胴（アクセント色）
+    const body = COSMETICS.body[c.body];
     if (this.skinBand) {
       this.bodyMesh.remove(this.skinBand);
       this.skinBand.geometry.dispose();
       this.skinBand.material.dispose();
       this.skinBand = null;
     }
-    this.legL.material.color.setHex(s.color !== null ? s.color : 0x333355);
-    if (s.color !== null) {
+    this.legL.material.color.setHex(body.color !== null ? body.color : 0x333355);
+    if (body.color !== null) {
       const band = new THREE.Mesh(
         new THREE.TorusGeometry(0.27, 0.045, 6, 16),
-        new THREE.MeshStandardMaterial({ color: s.color, emissive: s.color, emissiveIntensity: s.glow })
+        new THREE.MeshStandardMaterial({ color: body.color, emissive: body.color, emissiveIntensity: body.glow })
       );
       band.rotation.x = Math.PI / 2;
       band.position.y = 0.25; // bodyMeshローカル座標（しゃがみ時のスケールに追従させる）
       this.bodyMesh.add(band);
       this.skinBand = band;
+    }
+
+    // 頭（アクセサリ）: headMeshの子にしてしゃがみ時の頭位置に追従させる
+    if (this.headAcc) {
+      this.headMesh.remove(this.headAcc);
+      this.headAcc.traverse(o => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) o.material.dispose();
+      });
+      this.headAcc = null;
+    }
+    if (c.head !== 'none') {
+      const item = COSMETICS.head[c.head];
+      const g = new THREE.Group();
+      const mat = new THREE.MeshStandardMaterial({ color: item.color });
+      if (c.head === 'cap') {
+        const dome = new THREE.Mesh(new THREE.SphereGeometry(0.165, 8, 6, 0, Math.PI * 2, 0, Math.PI / 2), mat);
+        dome.position.y = 0.04;
+        const brim = new THREE.Mesh(new THREE.BoxGeometry(0.2, 0.02, 0.14), mat);
+        brim.position.set(0, 0.05, 0.17);
+        g.add(dome, brim);
+      } else if (c.head === 'band') {
+        const band = new THREE.Mesh(new THREE.TorusGeometry(0.155, 0.03, 6, 16), mat);
+        band.rotation.x = Math.PI / 2;
+        band.position.y = 0.04;
+        g.add(band);
+      } else if (c.head === 'halo') {
+        mat.emissive.setHex(item.color);
+        mat.emissiveIntensity = 0.9;
+        const halo = new THREE.Mesh(new THREE.TorusGeometry(0.12, 0.02, 6, 20), mat);
+        halo.rotation.x = Math.PI / 2;
+        halo.position.y = 0.3;
+        g.add(halo);
+      } else if (c.head === 'horns') {
+        const hornGeo = new THREE.ConeGeometry(0.04, 0.13, 6);
+        const h1 = new THREE.Mesh(hornGeo, mat);
+        h1.position.set(-0.1, 0.14, 0); h1.rotation.z = 0.35;
+        const h2 = new THREE.Mesh(hornGeo, mat);
+        h2.position.set(0.1, 0.14, 0); h2.rotation.z = -0.35;
+        g.add(h1, h2);
+      } else if (c.head === 'crown') {
+        mat.emissive.setHex(item.color);
+        mat.emissiveIntensity = 0.35;
+        const ring = new THREE.Mesh(new THREE.CylinderGeometry(0.13, 0.14, 0.08, 8, 1, true), mat);
+        ring.position.y = 0.15;
+        const spikeGeo = new THREE.ConeGeometry(0.025, 0.07, 4);
+        for (let i = 0; i < 5; i++) {
+          const a = (i / 5) * Math.PI * 2;
+          const s = new THREE.Mesh(spikeGeo, mat);
+          s.position.set(Math.cos(a) * 0.13, 0.22, Math.sin(a) * 0.13);
+          g.add(s);
+        }
+        g.add(ring);
+      }
+      this.headMesh.add(g);
+      this.headAcc = g;
     }
   }
 
@@ -984,10 +1070,10 @@ class Ball {
       }
       this.trail.geometry.attributes.position.needsUpdate = true;
       this.trail.geometry.setDrawRange(0, Math.min(this.trailPositions.length, 10));
-      // 投げた人のスキンにトレイル色があれば着色
-      const ts = this.thrownBy && SKINS[this.thrownBy.skinId] ? SKINS[this.thrownBy.skinId] : null;
-      const hasSkinTrail = ts && ts.trail !== null;
-      this.trail.material.color.setHex(hasSkinTrail ? ts.trail : 0xff8844);
+      // 投げた人の投げエフェクト(throwfx)にトレイル色があれば着色
+      const tc = this.thrownBy && this.thrownBy.cosmetics ? COSMETICS.throwfx[this.thrownBy.cosmetics.throwfx] : null;
+      const hasSkinTrail = tc && tc.trail !== null;
+      this.trail.material.color.setHex(hasSkinTrail ? tc.trail : 0xff8844);
       this.trail.material.opacity = hasSkinTrail ? 0.75 : 0.4;
       this.trail.visible = true;
 
@@ -1558,17 +1644,33 @@ function initFirebase() {
       if (merged !== cloudRP) {
         ref.set({ rankRP: merged, name: settings.name, updated: Date.now() }, { merge: true }).catch(() => {});
       }
-      // コイン・スキンのクラウド同期（コインは大きい方、所持スキンは和集合を採用）
+      // コイン・コスメのクラウド同期（コインは大きい方、所持コスメはカテゴリごとの和集合を採用）
       const d = snap.exists ? snap.data() : {};
       _coins = Math.max(d.coins || 0, _coins);
-      const cloudOwned = Array.isArray(d.ownedSkins) ? d.ownedSkins : [];
-      _ownedSkins = [...new Set([..._ownedSkins, ...cloudOwned])].filter(id => SKINS[id]);
-      if (!_ownedSkins.includes('default')) _ownedSkins.push('default');
-      if (d.equippedSkin && SKINS[d.equippedSkin] && _ownedSkins.includes(d.equippedSkin) && _equippedSkin === 'default') {
-        _equippedSkin = d.equippedSkin;
+      if (d.cosOwned && typeof d.cosOwned === 'object') {
+        for (const k of COS_CATS) {
+          const cloud = Array.isArray(d.cosOwned[k]) ? d.cosOwned[k] : [];
+          _cosOwned[k] = [...new Set([..._cosOwned[k], ...cloud.filter(id => COSMETICS[k][id])])];
+        }
+      }
+      // 旧形式(ownedSkins/equippedSkin)がクラウドに残っていたら胴+投げに移行
+      if (Array.isArray(d.ownedSkins)) {
+        for (const id of d.ownedSkins) {
+          if (COSMETICS.body[id] && !_cosOwned.body.includes(id)) _cosOwned.body.push(id);
+          if (COSMETICS.throwfx[id] && !_cosOwned.throwfx.includes(id)) _cosOwned.throwfx.push(id);
+        }
+      }
+      const cloudEq = normalizeCosmetics(d.cosEquipped);
+      for (const k of COS_CATS) {
+        if (_cosEquipped[k] === COS_DEFAULTS[k] && cloudEq[k] !== COS_DEFAULTS[k] && _cosOwned[k].includes(cloudEq[k])) {
+          _cosEquipped[k] = cloudEq[k];
+        }
       }
       saveSkinData();
-      if (document.getElementById('locker').style.display === 'flex') renderLocker();
+      if (document.getElementById('locker').style.display === 'flex') {
+        if (lockerPrev) lockerPrev.model.applyCosmetics(_cosEquipped);
+        renderLocker();
+      }
       if (document.getElementById('online-select').style.display === 'flex') updateRankDisplay();
     } catch (e) {
       console.warn('rank sync failed:', e);
@@ -1661,74 +1763,211 @@ function forgotPassword() {
     .catch(e => { errEl.style.color = ''; errEl.textContent = emailErrorText(e); });
 }
 
-/* ── スキン & コイン ── */
-// カタログはサーバー(server.js VALID_SKINS)と対応。colorはアクセント色、
-// glowは発光強度、trailは投げたボールの残像色（nullなら無し）
-const SKINS = {
-  default: { name: 'ノーマル',   price: 0,    color: null,     glow: 0,   trail: null },
-  gold:    { name: 'ゴールド',   price: 500,  color: 0xffd700, glow: 0.5, trail: 0xffd700 },
-  sakura:  { name: 'サクラ',     price: 600,  color: 0xff9ecb, glow: 0.4, trail: 0xffb7d5 },
-  neon:    { name: 'ネオン',     price: 800,  color: 0x00ff99, glow: 0.9, trail: 0x00ff99 },
-  shadow:  { name: 'シャドウ',   price: 800,  color: 0x8844ff, glow: 0.7, trail: 0x8844ff },
-  flame:   { name: 'フレイム',   price: 1200, color: 0xff5500, glow: 0.8, trail: 0xff6600 },
-  ice:     { name: 'アイス',     price: 1200, color: 0x66e0ff, glow: 0.8, trail: 0x99eeff },
+/* ── コスメ（部位別スキン）& コイン ── */
+// 4カテゴリ: head(頭のアクセサリ) / body(胴のアクセント色) /
+// throwfx(投げたボールのトレイル色) / hitfx(命中エフェクト色)。
+// カタログIDはサーバー(server.js VALID_COSMETICS)と対応
+const COSMETICS = {
+  head: {
+    none:  { name: 'なし',     price: 0,    icon: '－' },
+    cap:   { name: 'キャップ', price: 300,  icon: '🧢', color: 0x3366ff },
+    band:  { name: 'ハチマキ', price: 400,  icon: '🎗', color: 0xffffff },
+    halo:  { name: 'てんし',   price: 1000, icon: '😇', color: 0xffee88 },
+    horns: { name: 'あくま',   price: 1000, icon: '😈', color: 0xcc2222 },
+    crown: { name: '王かん',   price: 1500, icon: '👑', color: 0xffd700 },
+  },
+  body: {
+    default: { name: 'ノーマル', price: 0,    color: null,     glow: 0 },
+    gold:    { name: 'ゴールド', price: 500,  color: 0xffd700, glow: 0.5 },
+    sakura:  { name: 'サクラ',   price: 600,  color: 0xff9ecb, glow: 0.4 },
+    neon:    { name: 'ネオン',   price: 800,  color: 0x00ff99, glow: 0.9 },
+    shadow:  { name: 'シャドウ', price: 800,  color: 0x8844ff, glow: 0.7 },
+    flame:   { name: 'フレイム', price: 1200, color: 0xff5500, glow: 0.8 },
+    ice:     { name: 'アイス',   price: 1200, color: 0x66e0ff, glow: 0.8 },
+  },
+  throwfx: {
+    default: { name: 'ノーマル', price: 0,   trail: null }, // 標準のオレンジ
+    gold:    { name: 'ゴールド', price: 400, trail: 0xffd700 },
+    sakura:  { name: 'サクラ',   price: 400, trail: 0xffb7d5 },
+    neon:    { name: 'ネオン',   price: 400, trail: 0x00ff99 },
+    shadow:  { name: 'シャドウ', price: 400, trail: 0x8844ff },
+    flame:   { name: 'フレイム', price: 600, trail: 0xff6600 },
+    ice:     { name: 'アイス',   price: 600, trail: 0x99eeff },
+  },
+  hitfx: {
+    default: { name: 'ノーマル', price: 0,   color: null }, // 標準のオレンジ爆発
+    gold:    { name: 'ゴールド', price: 500, color: 0xffd700 },
+    sakura:  { name: 'サクラ',   price: 500, color: 0xff88bb },
+    neon:    { name: 'ネオン',   price: 500, color: 0x00ff99 },
+    shadow:  { name: 'シャドウ', price: 500, color: 0x8844ff },
+    flame:   { name: 'フレイム', price: 700, color: 0xff4400 },
+    ice:     { name: 'アイス',   price: 700, color: 0x66e0ff },
+  },
 };
+const COS_CATS = ['head', 'body', 'throwfx', 'hitfx'];
+const COS_CAT_LABEL = { head: '頭', body: '胴', throwfx: '投げ', hitfx: 'ヒット' };
+const COS_DEFAULTS = { head: 'none', body: 'default', throwfx: 'default', hitfx: 'default' };
 
-// コイン・所持スキンはランクと同様にlocalStorageを正とし、ログイン中はFirestoreにも同期
+function normalizeCosmetics(c) {
+  const out = { ...COS_DEFAULTS };
+  if (c && typeof c === 'object') {
+    for (const k of COS_CATS) {
+      if (typeof c[k] === 'string' && COSMETICS[k][c[k]]) out[k] = c[k];
+    }
+  }
+  return out;
+}
+
+// コイン・所持コスメはランクと同様にlocalStorageを正とし、ログイン中はFirestoreにも同期
 let _coins = parseInt(localStorage.getItem('db_coins') || '0', 10) || 0;
-let _ownedSkins = (() => {
+let _cosOwned = (() => {
+  const base = { head: ['none'], body: ['default'], throwfx: ['default'], hitfx: ['default'] };
   try {
-    const a = JSON.parse(localStorage.getItem('db_skins_owned') || '["default"]');
-    return Array.isArray(a) ? a.filter(id => SKINS[id]) : ['default'];
-  } catch (e) { return ['default']; }
+    const a = JSON.parse(localStorage.getItem('db_cos_owned') || 'null');
+    if (a && typeof a === 'object') {
+      for (const k of COS_CATS) {
+        if (Array.isArray(a[k])) base[k] = [...new Set([...base[k], ...a[k].filter(id => COSMETICS[k][id])])];
+      }
+    }
+  } catch (e) {}
+  return base;
 })();
-if (!_ownedSkins.includes('default')) _ownedSkins.push('default');
-let _equippedSkin = localStorage.getItem('db_skin_equipped') || 'default';
-if (!SKINS[_equippedSkin] || !_ownedSkins.includes(_equippedSkin)) _equippedSkin = 'default';
+let _cosEquipped = normalizeCosmetics((() => {
+  try { return JSON.parse(localStorage.getItem('db_cos_equipped') || 'null'); } catch (e) { return null; }
+})());
+
+// 旧単一スキン形式(db_skins_owned/db_skin_equipped)からの移行:
+// 旧スキンの見た目は「胴アクセント+トレイル」だったので、両カテゴリの同IDに引き継ぐ
+(function migrateOldSkins() {
+  try {
+    const oldOwned = JSON.parse(localStorage.getItem('db_skins_owned') || 'null');
+    if (Array.isArray(oldOwned)) {
+      for (const id of oldOwned) {
+        if (COSMETICS.body[id] && !_cosOwned.body.includes(id)) _cosOwned.body.push(id);
+        if (COSMETICS.throwfx[id] && !_cosOwned.throwfx.includes(id)) _cosOwned.throwfx.push(id);
+      }
+    }
+    const oldEq = localStorage.getItem('db_skin_equipped');
+    if (oldEq && localStorage.getItem('db_cos_equipped') === null) {
+      if (COSMETICS.body[oldEq]) _cosEquipped.body = oldEq;
+      if (COSMETICS.throwfx[oldEq]) _cosEquipped.throwfx = oldEq;
+    }
+    localStorage.removeItem('db_skins_owned');
+    localStorage.removeItem('db_skin_equipped');
+  } catch (e) {}
+})();
+for (const k of COS_CATS) {
+  if (!_cosOwned[k].includes(_cosEquipped[k])) _cosEquipped[k] = COS_DEFAULTS[k];
+}
 
 function saveSkinData() {
   localStorage.setItem('db_coins', String(_coins));
-  localStorage.setItem('db_skins_owned', JSON.stringify(_ownedSkins));
-  localStorage.setItem('db_skin_equipped', _equippedSkin);
+  localStorage.setItem('db_cos_owned', JSON.stringify(_cosOwned));
+  localStorage.setItem('db_cos_equipped', JSON.stringify(_cosEquipped));
   if (fbUser && fbDB) {
     fbDB.collection('users').doc(fbUser.uid)
-      .set({ coins: _coins, ownedSkins: _ownedSkins, equippedSkin: _equippedSkin, updated: Date.now() }, { merge: true })
+      .set({ coins: _coins, cosOwned: _cosOwned, cosEquipped: _cosEquipped, updated: Date.now() }, { merge: true })
       .catch(() => {});
   }
 }
 function addCoins(n) { _coins = Math.max(0, _coins + n); saveSkinData(); }
-function buySkin(id) {
-  const s = SKINS[id];
-  if (!s || _ownedSkins.includes(id) || _coins < s.price) return false;
-  _coins -= s.price;
-  _ownedSkins.push(id);
+function buyCosmetic(cat, id) {
+  const item = COSMETICS[cat] && COSMETICS[cat][id];
+  if (!item || _cosOwned[cat].includes(id) || _coins < item.price) return false;
+  _coins -= item.price;
+  _cosOwned[cat].push(id);
   saveSkinData();
   return true;
 }
-function equipSkin(id) {
-  if (!SKINS[id] || !_ownedSkins.includes(id)) return;
-  _equippedSkin = id;
+function equipCosmetic(cat, id) {
+  if (!COSMETICS[cat] || !COSMETICS[cat][id] || !_cosOwned[cat].includes(id)) return;
+  _cosEquipped[cat] = id;
   saveSkinData();
+}
+
+/* ── ロッカーUI（左: 3Dプレビュー / 右: カテゴリ別グリッド） ── */
+let lockerCat = 'head';
+let lockerPrev = null; // { renderer, scene, cam, model, running }
+
+function initLockerPreview() {
+  if (lockerPrev) return;
+  const canvas = document.getElementById('locker-canvas');
+  const renderer2 = new THREE.WebGLRenderer({ canvas, antialias: true, alpha: true });
+  renderer2.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  const scene2 = new THREE.Scene();
+  const cam2 = new THREE.PerspectiveCamera(35, 1, 0.1, 20);
+  cam2.position.set(0, 1.05, 3.2);
+  cam2.lookAt(0, 0.85, 0);
+  scene2.add(new THREE.AmbientLight(0xffffff, 0.85));
+  const dl = new THREE.DirectionalLight(0xffffff, 0.9);
+  dl.position.set(2, 4, 3);
+  scene2.add(dl);
+  // isHuman=true でゲームのsceneには追加されないプレビュー専用モデル
+  const model = new Player(0, TEAM_BLUE, true);
+  scene2.add(model.mesh);
+  lockerPrev = { renderer: renderer2, scene: scene2, cam: cam2, model, running: false, spin: 0.5 };
+}
+
+function lockerPreviewLoop() {
+  if (!lockerPrev) return;
+  if (document.getElementById('locker').style.display !== 'flex') { lockerPrev.running = false; return; }
+  lockerPrev.spin += 0.012;
+  lockerPrev.model.mesh.rotation.y = lockerPrev.spin;
+  const c = lockerPrev.renderer.domElement;
+  const w = c.clientWidth, h = c.clientHeight;
+  if (w > 0 && h > 0 && (c.width !== Math.floor(w * lockerPrev.renderer.getPixelRatio()) || c.height !== Math.floor(h * lockerPrev.renderer.getPixelRatio()))) {
+    lockerPrev.renderer.setSize(w, h, false);
+    lockerPrev.cam.aspect = w / h;
+    lockerPrev.cam.updateProjectionMatrix();
+  }
+  lockerPrev.renderer.render(lockerPrev.scene, lockerPrev.cam);
+  requestAnimationFrame(lockerPreviewLoop);
+}
+
+function openLocker() {
+  document.getElementById('locker').style.display = 'flex';
+  initLockerPreview();
+  lockerPrev.model.applyCosmetics(_cosEquipped);
+  renderLocker();
+  if (!lockerPrev.running) { lockerPrev.running = true; requestAnimationFrame(lockerPreviewLoop); }
+}
+
+function cosSwatchStyle(cat, id, el) {
+  const item = COSMETICS[cat][id];
+  if (cat === 'head') {
+    el.textContent = item.icon;
+    el.classList.add('emoji');
+    return;
+  }
+  const colorVal = cat === 'throwfx' ? item.trail : item.color;
+  const hex = colorVal !== null ? '#' + colorVal.toString(16).padStart(6, '0') : (cat === 'body' ? '#556' : '#ff8844');
+  el.style.background = hex;
+  const glowy = (cat === 'body' && item.glow > 0.3) || (cat !== 'body' && colorVal !== null);
+  if (glowy) el.style.boxShadow = `0 0 12px ${hex}`;
 }
 
 function renderLocker() {
   const grid = document.getElementById('skin-grid');
   if (!grid) return;
   document.getElementById('locker-coins').textContent = '🪙 ' + _coins;
+  // タブのアクティブ表示 & 装備中アイテム名
+  document.querySelectorAll('.locker-tab').forEach(t => {
+    t.classList.toggle('active', t.dataset.cat === lockerCat);
+    const eq = COSMETICS[t.dataset.cat][_cosEquipped[t.dataset.cat]];
+    t.querySelector('.locker-tab-item').textContent = eq.name;
+  });
   grid.innerHTML = '';
-  for (const [id, s] of Object.entries(SKINS)) {
-    const owned = _ownedSkins.includes(id);
-    const equipped = _equippedSkin === id;
+  for (const [id, item] of Object.entries(COSMETICS[lockerCat])) {
+    const owned = _cosOwned[lockerCat].includes(id);
+    const equipped = _cosEquipped[lockerCat] === id;
     const card = document.createElement('div');
     card.className = 'skin-card' + (equipped ? ' equipped' : '');
     const sw = document.createElement('div');
     sw.className = 'skin-swatch';
-    const hex = s.color !== null ? '#' + s.color.toString(16).padStart(6, '0') : '#556';
-    sw.style.background = hex;
-    if (s.glow > 0.3) sw.style.boxShadow = `0 0 ${Math.round(8 + s.glow * 14)}px ${hex}`;
+    cosSwatchStyle(lockerCat, id, sw);
     const nm = document.createElement('div');
     nm.className = 'skin-name';
-    nm.textContent = s.name;
+    nm.textContent = item.name;
     const btn = document.createElement('button');
     btn.className = 'skin-btn';
     if (equipped) {
@@ -1737,12 +1976,22 @@ function renderLocker() {
     } else if (owned) {
       btn.classList.add('equip');
       btn.textContent = '装備する';
-      btn.onclick = () => { equipSkin(id); renderLocker(); };
+      btn.onclick = () => {
+        equipCosmetic(lockerCat, id);
+        if (lockerPrev) lockerPrev.model.applyCosmetics(_cosEquipped);
+        renderLocker();
+      };
     } else {
       btn.classList.add('buy');
-      btn.textContent = '🪙 ' + s.price;
-      btn.disabled = _coins < s.price;
-      btn.onclick = () => { if (buySkin(id)) { equipSkin(id); renderLocker(); } };
+      btn.textContent = '🪙 ' + item.price;
+      btn.disabled = _coins < item.price;
+      btn.onclick = () => {
+        if (buyCosmetic(lockerCat, id)) {
+          equipCosmetic(lockerCat, id);
+          if (lockerPrev) lockerPrev.model.applyCosmetics(_cosEquipped);
+          renderLocker();
+        }
+      };
     }
     card.append(sw, nm, btn);
     grid.appendChild(card);
@@ -1851,12 +2100,14 @@ const game = {
   setupUI() {
     document.getElementById('btn-locker').addEventListener('click', () => {
       document.getElementById('menu').style.display = 'none';
-      renderLocker();
-      document.getElementById('locker').style.display = 'flex';
+      openLocker();
     });
     document.getElementById('btn-locker-back').addEventListener('click', () => {
       document.getElementById('locker').style.display = 'none';
       document.getElementById('menu').style.display = 'flex';
+    });
+    document.querySelectorAll('.locker-tab').forEach(t => {
+      t.addEventListener('click', () => { lockerCat = t.dataset.cat; renderLocker(); });
     });
     document.getElementById('btn-solo').addEventListener('click', () => {
       this.mode = 'solo'; this.startGame();
@@ -1880,7 +2131,7 @@ const game = {
       document.getElementById('match-count').textContent = '0 / 16';
       document.getElementById('match-countdown').textContent = '';
       document.getElementById('match-status').textContent = '対戦相手を探しています...';
-      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: true, skin: _equippedSkin }); });
+      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: true, skin: _cosEquipped }); });
     });
     document.getElementById('btn-casual').addEventListener('click', () => {
       this.ranked = false;
@@ -1890,7 +2141,7 @@ const game = {
       document.getElementById('match-count').textContent = '0 / 16';
       document.getElementById('match-countdown').textContent = '';
       document.getElementById('match-status').textContent = '対戦相手を探しています...';
-      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: false, skin: _equippedSkin }); });
+      net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: false, skin: _cosEquipped }); });
     });
     document.getElementById('btn-online-back').addEventListener('click', () => {
       document.getElementById('online-select').style.display = 'none';
@@ -1996,7 +2247,7 @@ const game = {
       players[players.length-1].setStartPos(i);
     }
     humanPlayer = players[0];
-    humanPlayer.applySkin(_equippedSkin);
+    humanPlayer.applyCosmetics(_cosEquipped);
 
     // 各チームの末尾2人を外野スタートにする（人間プレイヤー除く）
     for (let i = CFG.TEAM_SIZE - INITIAL_OUTFIELD; i < CFG.TEAM_SIZE; i++) {
@@ -2053,13 +2304,13 @@ const game = {
     if (!humanPlayer.isHuman) { humanPlayer.isHuman = true; }
     if (!humanPlayer.mesh.parent) scene.add(humanPlayer.mesh);
 
-    humanPlayer.applySkin(_equippedSkin);
+    humanPlayer.applyCosmetics(_cosEquipped);
     players.forEach(p => {
       if (p.id === mySlot) return;
       const name = net.slotNames.get(p.id);
       if (name) p.setNameLabel(name, true);
       const skin = net.slotSkins.get(p.id);
-      if (skin) p.applySkin(skin);
+      if (skin) p.applyCosmetics(skin);
     });
 
     for (let i = 0; i < CFG.BALL_COUNT; i++) {
@@ -2336,9 +2587,9 @@ const game = {
         b.trail.geometry.attributes.position.needsUpdate = true;
         b.trail.geometry.setDrawRange(0, Math.min(b.trailPositions.length, 10));
         const thrower = b.throwerSlot >= 0 && b.throwerSlot < players.length ? players[b.throwerSlot] : null;
-        const ts = thrower && SKINS[thrower.skinId] ? SKINS[thrower.skinId] : null;
-        const hasSkinTrail = ts && ts.trail !== null;
-        b.trail.material.color.setHex(hasSkinTrail ? ts.trail : 0xff8844);
+        const tc = thrower && thrower.cosmetics ? COSMETICS.throwfx[thrower.cosmetics.throwfx] : null;
+        const hasSkinTrail = tc && tc.trail !== null;
+        b.trail.material.color.setHex(hasSkinTrail ? tc.trail : 0xff8844);
         b.trail.material.opacity = hasSkinTrail ? 0.75 : 0.4;
       }
     }
@@ -2633,8 +2884,11 @@ const particles = [];
 // ジオメトリは共有、マテリアルは寿命が切れたら破棄する（GPUメモリの蓄積防止）
 const _particleGeo = new THREE.SphereGeometry(0.08, 5, 5);
 
-function spawnHitParticles(pos) {
-  const colors = [0xff6600, 0xffcc00, 0xff3300, 0xffffff];
+function spawnHitParticles(pos, tint) {
+  // tint指定時（hitfxコスメ）はその色系統のパレットにする
+  const colors = tint != null
+    ? [tint, tint, 0xffffff, tint]
+    : [0xff6600, 0xffcc00, 0xff3300, 0xffffff];
   for (let i = 0; i < 14; i++) {
     const mat = new THREE.MeshBasicMaterial({color: colors[Math.floor(Math.random()*colors.length)]});
     const mesh = new THREE.Mesh(_particleGeo, mat);
@@ -2688,7 +2942,9 @@ function triggerHitEffect(hitPos) {
   ht.style.animation = 'hitPop 0.7s ease-out forwards';
 
   cameraShake = 0.18;
-  spawnHitParticles(hitPos);
+  // 自分のhitfxコスメの色でエフェクトを出す
+  const hc = humanPlayer && humanPlayer.cosmetics ? COSMETICS.hitfx[humanPlayer.cosmetics.hitfx] : null;
+  spawnHitParticles(hitPos, hc ? hc.color : null);
 }
 
 /* ── Settings ── */
@@ -2978,8 +3234,8 @@ const net = {
     if (this.ws && this.ws.readyState === 1) this.ws.send(JSON.stringify(msg));
   },
 
-  createRoom() { this.send({ type: 'create_room', name: settings.name || 'Host', skin: _equippedSkin }); },
-  joinRoom(key) { this.send({ type: 'join_room', key, name: settings.name || 'Player', skin: _equippedSkin }); },
+  createRoom() { this.send({ type: 'create_room', name: settings.name || 'Host', skin: _cosEquipped }); },
+  joinRoom(key) { this.send({ type: 'join_room', key, name: settings.name || 'Player', skin: _cosEquipped }); },
 
   getHumanSlots() {
     const slots = [this.mySlot];

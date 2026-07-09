@@ -518,7 +518,11 @@ const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a2e);
 scene.fog = new THREE.FogExp2(0x1a1a2e, 0.012);
 
-const isMobile = () => window.innerWidth <= 768 && ('ontouchstart' in window);
+// 短い辺で判定することで横持ち（幅844px等）でもスマホ扱いになる。
+// 幅で判定すると横向きのとき768pxを超えてPC用FOVが適用されてしまう
+const isMobile = () =>
+  (('ontouchstart' in window) || navigator.maxTouchPoints > 0) &&
+  Math.min(window.innerWidth, window.innerHeight) <= 600;
 const camera = new THREE.PerspectiveCamera(78, window.innerWidth/window.innerHeight, 0.1, 140);
 const clock = new THREE.Clock();
 

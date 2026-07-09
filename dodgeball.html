@@ -845,6 +845,47 @@ class Player {
           g.add(s);
         }
         g.add(ring);
+      } else if (c.head === 'ribbon') {
+        const wing = new THREE.BoxGeometry(0.09, 0.06, 0.02);
+        const w1 = new THREE.Mesh(wing, mat);
+        w1.position.set(-0.07, 0.15, 0); w1.rotation.z = 0.5;
+        const w2 = new THREE.Mesh(wing, mat);
+        w2.position.set(0.07, 0.15, 0); w2.rotation.z = -0.5;
+        const knot = new THREE.Mesh(new THREE.SphereGeometry(0.03, 6, 6), mat);
+        knot.position.y = 0.15;
+        g.add(w1, w2, knot);
+      } else if (c.head === 'glasses') {
+        const lens = new THREE.Mesh(new THREE.BoxGeometry(0.26, 0.055, 0.03), mat);
+        lens.position.set(0, 0.02, 0.14);
+        g.add(lens);
+      } else if (c.head === 'antenna') {
+        mat.emissive.setHex(item.color);
+        mat.emissiveIntensity = 0.8;
+        const rodMat = new THREE.MeshStandardMaterial({ color: 0x999999 });
+        const rod = new THREE.Mesh(new THREE.CylinderGeometry(0.012, 0.012, 0.16, 5), rodMat);
+        rod.position.y = 0.22;
+        const tip = new THREE.Mesh(new THREE.SphereGeometry(0.032, 6, 6), mat);
+        tip.position.y = 0.31;
+        g.add(rod, tip);
+      } else if (c.head === 'cat') {
+        const earGeo = new THREE.ConeGeometry(0.055, 0.1, 4);
+        const e1 = new THREE.Mesh(earGeo, mat);
+        e1.position.set(-0.09, 0.16, 0);
+        const e2 = new THREE.Mesh(earGeo, mat);
+        e2.position.set(0.09, 0.16, 0);
+        g.add(e1, e2);
+      } else if (c.head === 'mohawk') {
+        const hawk = new THREE.Mesh(new THREE.BoxGeometry(0.045, 0.11, 0.26), mat);
+        hawk.position.y = 0.15;
+        g.add(hawk);
+      } else if (c.head === 'wizard') {
+        mat.emissive.setHex(item.color);
+        mat.emissiveIntensity = 0.25;
+        const cone = new THREE.Mesh(new THREE.ConeGeometry(0.14, 0.3, 8), mat);
+        cone.position.y = 0.22;
+        const brim = new THREE.Mesh(new THREE.CylinderGeometry(0.2, 0.2, 0.02, 12), mat);
+        brim.position.y = 0.08;
+        g.add(cone, brim);
       }
       this.headMesh.add(g);
       this.headAcc = g;
@@ -1811,39 +1852,60 @@ function forgotPassword() {
 // rarity: N(ノーマル) / R(レア) / SR(スーパーレア)。入手はガチャのみ
 const COSMETICS = {
   head: {
-    none:  { name: 'なし',     rarity: null, icon: '－' },
-    cap:   { name: 'キャップ', rarity: 'N',  icon: '🧢', color: 0x3366ff },
-    band:  { name: 'ハチマキ', rarity: 'N',  icon: '🎗', color: 0xffffff },
-    halo:  { name: 'てんし',   rarity: 'R',  icon: '😇', color: 0xffee88 },
-    horns: { name: 'あくま',   rarity: 'R',  icon: '😈', color: 0xcc2222 },
-    crown: { name: '王かん',   rarity: 'SR', icon: '👑', color: 0xffd700 },
+    none:    { name: 'なし',           rarity: null, icon: '－' },
+    cap:     { name: 'キャップ',       rarity: 'N',  icon: '🧢', color: 0x3366ff },
+    band:    { name: 'ハチマキ',       rarity: 'N',  icon: '🎗', color: 0xffffff },
+    ribbon:  { name: 'リボン',         rarity: 'N',  icon: '🎀', color: 0xff66aa },
+    glasses: { name: 'サングラス',     rarity: 'N',  icon: '🕶', color: 0x111111 },
+    antenna: { name: 'アンテナ',       rarity: 'N',  icon: '🤖', color: 0x66ff66 },
+    halo:    { name: 'てんし',         rarity: 'R',  icon: '😇', color: 0xffee88 },
+    horns:   { name: 'あくま',         rarity: 'R',  icon: '😈', color: 0xcc2222 },
+    cat:     { name: 'ねこみみ',       rarity: 'R',  icon: '🐱', color: 0xffaa66 },
+    mohawk:  { name: 'モヒカン',       rarity: 'R',  icon: '🤘', color: 0xff3333 },
+    crown:   { name: '王かん',         rarity: 'SR', icon: '👑', color: 0xffd700 },
+    wizard:  { name: 'とんがりぼうし', rarity: 'SR', icon: '🧙', color: 0x5533cc },
   },
   body: {
-    default: { name: 'ノーマル', rarity: null, color: null,     glow: 0 },
-    gold:    { name: 'ゴールド', rarity: 'N',  color: 0xffd700, glow: 0.5 },
-    sakura:  { name: 'サクラ',   rarity: 'N',  color: 0xff9ecb, glow: 0.4 },
-    neon:    { name: 'ネオン',   rarity: 'R',  color: 0x00ff99, glow: 0.9 },
-    shadow:  { name: 'シャドウ', rarity: 'R',  color: 0x8844ff, glow: 0.7 },
-    flame:   { name: 'フレイム', rarity: 'SR', color: 0xff5500, glow: 0.8 },
-    ice:     { name: 'アイス',   rarity: 'SR', color: 0x66e0ff, glow: 0.8 },
+    default: { name: 'ノーマル',   rarity: null, color: null,     glow: 0 },
+    gold:    { name: 'ゴールド',   rarity: 'N',  color: 0xffd700, glow: 0.5 },
+    sakura:  { name: 'サクラ',     rarity: 'N',  color: 0xff9ecb, glow: 0.4 },
+    ruby:    { name: 'ルビー',     rarity: 'N',  color: 0xff2244, glow: 0.4 },
+    ocean:   { name: 'オーシャン', rarity: 'N',  color: 0x2299ff, glow: 0.4 },
+    neon:    { name: 'ネオン',     rarity: 'R',  color: 0x00ff99, glow: 0.9 },
+    shadow:  { name: 'シャドウ',   rarity: 'R',  color: 0x8844ff, glow: 0.7 },
+    lime:    { name: 'ライム',     rarity: 'R',  color: 0xaaff22, glow: 0.6 },
+    pearl:   { name: 'パール',     rarity: 'R',  color: 0xeeeeff, glow: 1.0 },
+    flame:   { name: 'フレイム',   rarity: 'SR', color: 0xff5500, glow: 0.8 },
+    ice:     { name: 'アイス',     rarity: 'SR', color: 0x66e0ff, glow: 0.8 },
+    prism:   { name: 'プリズム',   rarity: 'SR', color: 0xffffff, glow: 1.2 },
   },
   throwfx: {
-    default: { name: 'ノーマル', rarity: null, trail: null }, // 標準のオレンジ
-    gold:    { name: 'ゴールド', rarity: 'N',  trail: 0xffd700 },
-    sakura:  { name: 'サクラ',   rarity: 'N',  trail: 0xffb7d5 },
-    neon:    { name: 'ネオン',   rarity: 'N',  trail: 0x00ff99 },
-    shadow:  { name: 'シャドウ', rarity: 'N',  trail: 0x8844ff },
-    flame:   { name: 'フレイム', rarity: 'R',  trail: 0xff6600 },
-    ice:     { name: 'アイス',   rarity: 'R',  trail: 0x99eeff },
+    default: { name: 'ノーマル',   rarity: null, trail: null }, // 標準のオレンジ
+    gold:    { name: 'ゴールド',   rarity: 'N',  trail: 0xffd700 },
+    sakura:  { name: 'サクラ',     rarity: 'N',  trail: 0xffb7d5 },
+    neon:    { name: 'ネオン',     rarity: 'N',  trail: 0x00ff99 },
+    shadow:  { name: 'シャドウ',   rarity: 'N',  trail: 0x8844ff },
+    ruby:    { name: 'ルビー',     rarity: 'N',  trail: 0xff2244 },
+    ocean:   { name: 'オーシャン', rarity: 'N',  trail: 0x2299ff },
+    lime:    { name: 'ライム',     rarity: 'N',  trail: 0xaaff22 },
+    flame:   { name: 'フレイム',   rarity: 'R',  trail: 0xff6600 },
+    ice:     { name: 'アイス',     rarity: 'R',  trail: 0x99eeff },
+    pearl:   { name: 'パール',     rarity: 'R',  trail: 0xffffff },
+    prism:   { name: 'プリズム',   rarity: 'SR', trail: 0xffffff },
   },
   hitfx: {
-    default: { name: 'ノーマル', rarity: null, color: null }, // 標準のオレンジ爆発
-    gold:    { name: 'ゴールド', rarity: 'N',  color: 0xffd700 },
-    sakura:  { name: 'サクラ',   rarity: 'N',  color: 0xff88bb },
-    neon:    { name: 'ネオン',   rarity: 'N',  color: 0x00ff99 },
-    shadow:  { name: 'シャドウ', rarity: 'N',  color: 0x8844ff },
-    flame:   { name: 'フレイム', rarity: 'R',  color: 0xff4400 },
-    ice:     { name: 'アイス',   rarity: 'R',  color: 0x66e0ff },
+    default: { name: 'ノーマル',   rarity: null, color: null }, // 標準のオレンジ爆発
+    gold:    { name: 'ゴールド',   rarity: 'N',  color: 0xffd700 },
+    sakura:  { name: 'サクラ',     rarity: 'N',  color: 0xff88bb },
+    neon:    { name: 'ネオン',     rarity: 'N',  color: 0x00ff99 },
+    shadow:  { name: 'シャドウ',   rarity: 'N',  color: 0x8844ff },
+    ruby:    { name: 'ルビー',     rarity: 'N',  color: 0xff2244 },
+    ocean:   { name: 'オーシャン', rarity: 'N',  color: 0x2299ff },
+    lime:    { name: 'ライム',     rarity: 'N',  color: 0xaaff22 },
+    flame:   { name: 'フレイム',   rarity: 'R',  color: 0xff4400 },
+    ice:     { name: 'アイス',     rarity: 'R',  color: 0x66e0ff },
+    pearl:   { name: 'パール',     rarity: 'R',  color: 0xffffff },
+    prism:   { name: 'プリズム',   rarity: 'SR', color: 0xffffff },
   },
 };
 const COS_CATS = ['head', 'body', 'throwfx', 'hitfx'];

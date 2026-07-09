@@ -112,6 +112,34 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .locker-tab.active{background:rgba(255,255,255,.18);color:#fff;border-color:rgba(255,255,255,.4)}
 #skin-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:10px;max-height:52vh;overflow-y:auto;padding:4px}
 .skin-swatch.emoji{display:flex;align-items:center;justify-content:center;font-size:30px;background:rgba(255,255,255,.1)}
+.skin-card.unowned{opacity:.65}
+.skin-btn.locked{cursor:default;font-size:11px}
+.skin-btn.locked.rarity-N{background:rgba(160,170,180,.35);color:#cdd}
+.skin-btn.locked.rarity-R{background:rgba(50,140,220,.4);color:#ade}
+.skin-btn.locked.rarity-SR{background:rgba(220,170,20,.4);color:#fea}
+#gacha-bar{display:flex;align-items:center;gap:10px;margin-bottom:12px;flex-wrap:wrap;justify-content:center}
+#gacha-bar button{padding:11px 20px;font-size:15px;font-weight:bold;border:none;border-radius:10px;cursor:pointer;color:#fff;background:linear-gradient(135deg,#e67e22,#c0392b)}
+#gacha-bar button:disabled{background:#555;color:#999;cursor:default}
+#gacha-bar .gacha-cost{font-size:12px;opacity:.85;margin-left:4px}
+#gacha-rates{font-size:11px;opacity:.55;width:100%;text-align:center}
+#gacha-modal{position:fixed;inset:0;background:rgba(0,0,0,.75);display:none;align-items:center;justify-content:center;z-index:115;flex-direction:column}
+#gacha-modal.show{display:flex}
+.gacha-box{background:rgba(20,20,50,.97);border:2px solid rgba(255,255,255,.3);border-radius:16px;padding:22px 26px;text-align:center;color:#fff;width:min(560px,92vw);max-height:86vh;overflow-y:auto}
+.gacha-box h3{font-size:22px;margin-bottom:14px}
+#gacha-results{display:grid;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:10px;margin-bottom:16px}
+.gacha-card{background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.2);border-radius:10px;padding:8px 4px;animation:gachaPop .4s ease-out backwards}
+.gacha-card.rarity-R{border-color:#4ac0ff;box-shadow:0 0 8px rgba(74,192,255,.4)}
+.gacha-card.rarity-SR{border-color:#ffd700;box-shadow:0 0 14px rgba(255,215,0,.6)}
+.gacha-card .skin-swatch{width:40px;height:40px;margin-bottom:4px}
+.gacha-card .skin-swatch.emoji{font-size:22px}
+.gacha-card .skin-name{font-size:11px;margin-bottom:2px}
+.gacha-rarity{font-size:10px;font-weight:bold;opacity:.7;margin-bottom:4px}
+.gacha-card.rarity-R .gacha-rarity{color:#4ac0ff;opacity:1}
+.gacha-card.rarity-SR .gacha-rarity{color:#ffd700;opacity:1}
+.gacha-cat{font-size:10px;opacity:.55;margin-bottom:3px}
+.gacha-tag{font-size:11px;font-weight:bold;color:#ffd700}
+.gacha-tag.new{color:#4f8}
+@keyframes gachaPop{0%{transform:scale(0) rotate(-8deg);opacity:0}70%{transform:scale(1.12) rotate(2deg)}100%{transform:scale(1) rotate(0)}}
 @media (max-width:600px) and (orientation:portrait){
   #locker{justify-content:flex-start;overflow-y:auto;padding-top:12px;padding-bottom:12px}
   #locker-main{flex-direction:column}
@@ -424,7 +452,12 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 <div id="locker">
   <h2>🎨 スキンロッカー</h2>
   <div id="locker-coins">🪙 0</div>
-  <p class="locker-hint">コインは試合に出ると獲得できます（勝利・命中でボーナス）</p>
+  <p class="locker-hint">コインは試合に出ると獲得できます（勝利・命中でボーナス）。アイテムはガチャで入手！</p>
+  <div id="gacha-bar">
+    <button id="btn-gacha1">🎰 ガチャを回す <span class="gacha-cost">🪙200</span></button>
+    <button id="btn-gacha10">🎰 10連ガチャ <span class="gacha-cost">🪙1800</span></button>
+    <span id="gacha-rates">SR 5%｜R 25%｜N 70%（ダブりはコインに変換）</span>
+  </div>
   <div id="locker-main">
     <div id="locker-preview"><canvas id="locker-canvas"></canvas></div>
     <div id="locker-right">
@@ -438,6 +471,14 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
     </div>
   </div>
   <button class="mp-btn mp-btn-back" id="btn-locker-back">戻る</button>
+</div>
+
+<div id="gacha-modal">
+  <div class="gacha-box">
+    <h3>🎰 ガチャ結果</h3>
+    <div id="gacha-results"></div>
+    <button class="mp-btn mp-btn-create" id="btn-gacha-close">OK</button>
+  </div>
 </div>
 
 <div id="matchmaking">
@@ -1767,41 +1808,42 @@ function forgotPassword() {
 // 4カテゴリ: head(頭のアクセサリ) / body(胴のアクセント色) /
 // throwfx(投げたボールのトレイル色) / hitfx(命中エフェクト色)。
 // カタログIDはサーバー(server.js VALID_COSMETICS)と対応
+// rarity: N(ノーマル) / R(レア) / SR(スーパーレア)。入手はガチャのみ
 const COSMETICS = {
   head: {
-    none:  { name: 'なし',     price: 0,    icon: '－' },
-    cap:   { name: 'キャップ', price: 300,  icon: '🧢', color: 0x3366ff },
-    band:  { name: 'ハチマキ', price: 400,  icon: '🎗', color: 0xffffff },
-    halo:  { name: 'てんし',   price: 1000, icon: '😇', color: 0xffee88 },
-    horns: { name: 'あくま',   price: 1000, icon: '😈', color: 0xcc2222 },
-    crown: { name: '王かん',   price: 1500, icon: '👑', color: 0xffd700 },
+    none:  { name: 'なし',     rarity: null, icon: '－' },
+    cap:   { name: 'キャップ', rarity: 'N',  icon: '🧢', color: 0x3366ff },
+    band:  { name: 'ハチマキ', rarity: 'N',  icon: '🎗', color: 0xffffff },
+    halo:  { name: 'てんし',   rarity: 'R',  icon: '😇', color: 0xffee88 },
+    horns: { name: 'あくま',   rarity: 'R',  icon: '😈', color: 0xcc2222 },
+    crown: { name: '王かん',   rarity: 'SR', icon: '👑', color: 0xffd700 },
   },
   body: {
-    default: { name: 'ノーマル', price: 0,    color: null,     glow: 0 },
-    gold:    { name: 'ゴールド', price: 500,  color: 0xffd700, glow: 0.5 },
-    sakura:  { name: 'サクラ',   price: 600,  color: 0xff9ecb, glow: 0.4 },
-    neon:    { name: 'ネオン',   price: 800,  color: 0x00ff99, glow: 0.9 },
-    shadow:  { name: 'シャドウ', price: 800,  color: 0x8844ff, glow: 0.7 },
-    flame:   { name: 'フレイム', price: 1200, color: 0xff5500, glow: 0.8 },
-    ice:     { name: 'アイス',   price: 1200, color: 0x66e0ff, glow: 0.8 },
+    default: { name: 'ノーマル', rarity: null, color: null,     glow: 0 },
+    gold:    { name: 'ゴールド', rarity: 'N',  color: 0xffd700, glow: 0.5 },
+    sakura:  { name: 'サクラ',   rarity: 'N',  color: 0xff9ecb, glow: 0.4 },
+    neon:    { name: 'ネオン',   rarity: 'R',  color: 0x00ff99, glow: 0.9 },
+    shadow:  { name: 'シャドウ', rarity: 'R',  color: 0x8844ff, glow: 0.7 },
+    flame:   { name: 'フレイム', rarity: 'SR', color: 0xff5500, glow: 0.8 },
+    ice:     { name: 'アイス',   rarity: 'SR', color: 0x66e0ff, glow: 0.8 },
   },
   throwfx: {
-    default: { name: 'ノーマル', price: 0,   trail: null }, // 標準のオレンジ
-    gold:    { name: 'ゴールド', price: 400, trail: 0xffd700 },
-    sakura:  { name: 'サクラ',   price: 400, trail: 0xffb7d5 },
-    neon:    { name: 'ネオン',   price: 400, trail: 0x00ff99 },
-    shadow:  { name: 'シャドウ', price: 400, trail: 0x8844ff },
-    flame:   { name: 'フレイム', price: 600, trail: 0xff6600 },
-    ice:     { name: 'アイス',   price: 600, trail: 0x99eeff },
+    default: { name: 'ノーマル', rarity: null, trail: null }, // 標準のオレンジ
+    gold:    { name: 'ゴールド', rarity: 'N',  trail: 0xffd700 },
+    sakura:  { name: 'サクラ',   rarity: 'N',  trail: 0xffb7d5 },
+    neon:    { name: 'ネオン',   rarity: 'N',  trail: 0x00ff99 },
+    shadow:  { name: 'シャドウ', rarity: 'N',  trail: 0x8844ff },
+    flame:   { name: 'フレイム', rarity: 'R',  trail: 0xff6600 },
+    ice:     { name: 'アイス',   rarity: 'R',  trail: 0x99eeff },
   },
   hitfx: {
-    default: { name: 'ノーマル', price: 0,   color: null }, // 標準のオレンジ爆発
-    gold:    { name: 'ゴールド', price: 500, color: 0xffd700 },
-    sakura:  { name: 'サクラ',   price: 500, color: 0xff88bb },
-    neon:    { name: 'ネオン',   price: 500, color: 0x00ff99 },
-    shadow:  { name: 'シャドウ', price: 500, color: 0x8844ff },
-    flame:   { name: 'フレイム', price: 700, color: 0xff4400 },
-    ice:     { name: 'アイス',   price: 700, color: 0x66e0ff },
+    default: { name: 'ノーマル', rarity: null, color: null }, // 標準のオレンジ爆発
+    gold:    { name: 'ゴールド', rarity: 'N',  color: 0xffd700 },
+    sakura:  { name: 'サクラ',   rarity: 'N',  color: 0xff88bb },
+    neon:    { name: 'ネオン',   rarity: 'N',  color: 0x00ff99 },
+    shadow:  { name: 'シャドウ', rarity: 'N',  color: 0x8844ff },
+    flame:   { name: 'フレイム', rarity: 'R',  color: 0xff4400 },
+    ice:     { name: 'アイス',   rarity: 'R',  color: 0x66e0ff },
   },
 };
 const COS_CATS = ['head', 'body', 'throwfx', 'hitfx'];
@@ -1871,18 +1913,47 @@ function saveSkinData() {
   }
 }
 function addCoins(n) { _coins = Math.max(0, _coins + n); saveSkinData(); }
-function buyCosmetic(cat, id) {
-  const item = COSMETICS[cat] && COSMETICS[cat][id];
-  if (!item || _cosOwned[cat].includes(id) || _coins < item.price) return false;
-  _coins -= item.price;
-  _cosOwned[cat].push(id);
-  saveSkinData();
-  return true;
-}
 function equipCosmetic(cat, id) {
   if (!COSMETICS[cat] || !COSMETICS[cat][id] || !_cosOwned[cat].includes(id)) return;
   _cosEquipped[cat] = id;
   saveSkinData();
+}
+
+/* ── ガチャ ── */
+const GACHA_COST = 200;
+const GACHA10_COST = 1800; // 10連は1回ぶんお得
+const GACHA_SR_RATE = 0.05, GACHA_R_RATE = 0.25; // 残りはN
+const DUPE_COINS = { N: 100, R: 250, SR: 500 }; // ダブり時のコイン変換
+
+function gachaPool(rarity) {
+  const pool = [];
+  for (const cat of COS_CATS) {
+    for (const [id, item] of Object.entries(COSMETICS[cat])) {
+      if (item.rarity === rarity) pool.push({ cat, id, rarity });
+    }
+  }
+  return pool;
+}
+
+function rollGachaOnce() {
+  const r = Math.random();
+  const rarity = r < GACHA_SR_RATE ? 'SR' : r < GACHA_SR_RATE + GACHA_R_RATE ? 'R' : 'N';
+  const pool = gachaPool(rarity);
+  const pick = pool[Math.floor(Math.random() * pool.length)];
+  const isNew = !_cosOwned[pick.cat].includes(pick.id);
+  if (isNew) _cosOwned[pick.cat].push(pick.id);
+  else _coins += DUPE_COINS[rarity];
+  return { ...pick, isNew };
+}
+
+function doGacha(count) {
+  const cost = count === 10 ? GACHA10_COST : GACHA_COST;
+  if (_coins < cost) return null;
+  _coins -= cost;
+  const results = [];
+  for (let i = 0; i < count; i++) results.push(rollGachaOnce());
+  saveSkinData();
+  return results;
 }
 
 /* ── ロッカーUI（左: 3Dプレビュー / 右: カテゴリ別グリッド） ── */
@@ -1950,6 +2021,7 @@ function renderLocker() {
   const grid = document.getElementById('skin-grid');
   if (!grid) return;
   document.getElementById('locker-coins').textContent = '🪙 ' + _coins;
+  updateGachaButtons();
   // タブのアクティブ表示 & 装備中アイテム名
   document.querySelectorAll('.locker-tab').forEach(t => {
     t.classList.toggle('active', t.dataset.cat === lockerCat);
@@ -1982,20 +2054,58 @@ function renderLocker() {
         renderLocker();
       };
     } else {
-      btn.classList.add('buy');
-      btn.textContent = '🪙 ' + item.price;
-      btn.disabled = _coins < item.price;
-      btn.onclick = () => {
-        if (buyCosmetic(lockerCat, id)) {
-          equipCosmetic(lockerCat, id);
-          if (lockerPrev) lockerPrev.model.applyCosmetics(_cosEquipped);
-          renderLocker();
-        }
-      };
+      // 未入手: ガチャでのみ入手可能
+      btn.classList.add('locked', 'rarity-' + item.rarity);
+      btn.textContent = item.rarity + '｜ガチャ';
+      btn.disabled = true;
+      card.classList.add('unowned');
     }
     card.append(sw, nm, btn);
     grid.appendChild(card);
   }
+}
+
+/* ── ガチャUI ── */
+function updateGachaButtons() {
+  const b1 = document.getElementById('btn-gacha1');
+  const b10 = document.getElementById('btn-gacha10');
+  if (!b1) return;
+  b1.disabled = _coins < GACHA_COST;
+  b10.disabled = _coins < GACHA10_COST;
+}
+
+function runGacha(count) {
+  const results = doGacha(count);
+  if (!results) return;
+  if (results.some(r => r.rarity === 'SR')) sfx.win(); else sfx.catch();
+  const list = document.getElementById('gacha-results');
+  list.innerHTML = '';
+  results.forEach((r, i) => {
+    const item = COSMETICS[r.cat][r.id];
+    const card = document.createElement('div');
+    card.className = 'gacha-card rarity-' + r.rarity;
+    card.style.animationDelay = (i * 0.09) + 's';
+    const rar = document.createElement('div');
+    rar.className = 'gacha-rarity';
+    rar.textContent = r.rarity;
+    const sw = document.createElement('div');
+    sw.className = 'skin-swatch';
+    cosSwatchStyle(r.cat, r.id, sw);
+    const nm = document.createElement('div');
+    nm.className = 'skin-name';
+    nm.textContent = item.name;
+    const cat = document.createElement('div');
+    cat.className = 'gacha-cat';
+    cat.textContent = COS_CAT_LABEL[r.cat];
+    const tag = document.createElement('div');
+    tag.className = 'gacha-tag' + (r.isNew ? ' new' : '');
+    tag.textContent = r.isNew ? 'NEW!' : `→ 🪙${DUPE_COINS[r.rarity]}`;
+    card.append(rar, sw, nm, cat, tag);
+    list.appendChild(card);
+  });
+  document.getElementById('gacha-modal').classList.add('show');
+  renderLocker();
+  updateGachaButtons();
 }
 
 /* ── Rank system ── */
@@ -2108,6 +2218,11 @@ const game = {
     });
     document.querySelectorAll('.locker-tab').forEach(t => {
       t.addEventListener('click', () => { lockerCat = t.dataset.cat; renderLocker(); });
+    });
+    document.getElementById('btn-gacha1').addEventListener('click', () => runGacha(1));
+    document.getElementById('btn-gacha10').addEventListener('click', () => runGacha(10));
+    document.getElementById('btn-gacha-close').addEventListener('click', () => {
+      document.getElementById('gacha-modal').classList.remove('show');
     });
     document.getElementById('btn-solo').addEventListener('click', () => {
       this.mode = 'solo'; this.startGame();

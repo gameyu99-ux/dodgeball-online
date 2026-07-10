@@ -1054,7 +1054,7 @@ const VALID_COSMETICS = {
   head: new Set(['none', 'cap', 'band', 'ribbon', 'glasses', 'antenna', 'halo', 'horns', 'cat', 'mohawk', 'crown', 'wizard']),
   body: new Set(['default', 'gold', 'sakura', 'ruby', 'ocean', 'neon', 'shadow', 'lime', 'pearl', 'flame', 'ice', 'prism']),
   throwfx: new Set(['default', 'gold', 'sakura', 'neon', 'shadow', 'ruby', 'ocean', 'lime', 'flame', 'ice', 'pearl', 'prism']),
-  hitfx: new Set(['default', 'gold', 'sakura', 'neon', 'shadow', 'ruby', 'ocean', 'lime', 'flame', 'ice', 'pearl', 'prism']),
+  hitfx: new Set(['default', 'orange', 'gold', 'sakura', 'neon', 'shadow', 'ruby', 'ocean', 'lime', 'flame', 'ice', 'pearl', 'prism']),
 };
 const COS_DEFAULTS = { head: 'none', body: 'default', throwfx: 'default', hitfx: 'default' };
 function cleanSkin(s) {

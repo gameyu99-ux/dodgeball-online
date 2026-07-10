@@ -1136,6 +1136,7 @@ class Ball {
       );
       this.mesh.position.copy(this.pos);
       this.trail.visible = false;
+      ballFlightFxReset(this);
       return;
     }
 
@@ -1152,11 +1153,8 @@ class Ball {
       }
       this.trail.geometry.attributes.position.needsUpdate = true;
       this.trail.geometry.setDrawRange(0, Math.min(this.trailPositions.length, 10));
-      // 投げた人の投げエフェクト(throwfx)にトレイル色があれば着色
-      const tc = this.thrownBy && this.thrownBy.cosmetics ? COSMETICS.throwfx[this.thrownBy.cosmetics.throwfx] : null;
-      const hasSkinTrail = tc && tc.trail !== null;
-      this.trail.material.color.setHex(hasSkinTrail ? tc.trail : 0xff8844);
-      this.trail.material.opacity = hasSkinTrail ? 0.75 : 0.4;
+      // 投げた人のthrowfxで着色+発光+残像パフ
+      ballFlightFx(this, this.thrownBy, dt);
       this.trail.visible = true;
 
       const hWT = TOTAL_W / 2, hLT = TOTAL_L / 2;
@@ -1176,6 +1174,7 @@ class Ball {
       this.pos.add(this.vel.clone().multiplyScalar(dt));
       this.pos.y = CFG.BALL_R;
       this.trail.visible = false;
+      ballFlightFxReset(this);
 
       const hWT = TOTAL_W / 2, hLT = TOTAL_L / 2;
       if (Math.abs(this.pos.x) > hWT) this.vel.x *= -0.5;
@@ -1246,13 +1245,15 @@ class Ball {
         }
 
         sfx.hit();
+        // hitfxパーティクルは投げた人の装備で、当てられた側の位置に全員から見える
+        spawnHitFxFor(thrower, this.pos.clone());
         p.sendToOutfield();
         if (p.isHuman) {
           sfx.outfield();
           game.showMsg('外野へ移動！', '#f80');
         } else if (thrower.isHuman) {
           game.hitCount++;
-          triggerHitEffect(this.pos.clone());
+          triggerHitEffect();
         }
         this.drop(this.pos);
         if (!thrower.inField) game.onOutfieldHit(thrower);
@@ -1894,7 +1895,8 @@ const COSMETICS = {
     prism:   { name: 'プリズム',   rarity: 'SR', trail: 0xffffff },
   },
   hitfx: {
-    default: { name: 'ノーマル',   rarity: null, color: null }, // 標準のオレンジ爆発
+    default: { name: 'ノーマル',   rarity: null, color: null }, // HIT!の文字のみ（パーティクル無し）
+    orange:  { name: 'オレンジ',   rarity: 'N',  color: 0xff6600, classic: true }, // 従来の爆発
     gold:    { name: 'ゴールド',   rarity: 'N',  color: 0xffd700 },
     sakura:  { name: 'サクラ',     rarity: 'N',  color: 0xff88bb },
     neon:    { name: 'ネオン',     rarity: 'N',  color: 0x00ff99 },
@@ -2073,7 +2075,8 @@ function cosSwatchStyle(cat, id, el) {
     return;
   }
   const colorVal = cat === 'throwfx' ? item.trail : item.color;
-  const hex = colorVal !== null ? '#' + colorVal.toString(16).padStart(6, '0') : (cat === 'body' ? '#556' : '#ff8844');
+  // hitfxのノーマルはパーティクル無し（文字のみ）なのでグレー表示
+  const hex = colorVal !== null ? '#' + colorVal.toString(16).padStart(6, '0') : (cat === 'throwfx' ? '#ff8844' : '#556')
   el.style.background = hex;
   const glowy = (cat === 'body' && item.glow > 0.3) || (cat !== 'body' && colorVal !== null);
   if (glowy) el.style.boxShadow = `0 0 12px ${hex}`;
@@ -2764,10 +2767,9 @@ const game = {
         b.trail.geometry.attributes.position.needsUpdate = true;
         b.trail.geometry.setDrawRange(0, Math.min(b.trailPositions.length, 10));
         const thrower = b.throwerSlot >= 0 && b.throwerSlot < players.length ? players[b.throwerSlot] : null;
-        const tc = thrower && thrower.cosmetics ? COSMETICS.throwfx[thrower.cosmetics.throwfx] : null;
-        const hasSkinTrail = tc && tc.trail !== null;
-        b.trail.material.color.setHex(hasSkinTrail ? tc.trail : 0xff8844);
-        b.trail.material.opacity = hasSkinTrail ? 0.75 : 0.4;
+        ballFlightFx(b, thrower, dt);
+      } else {
+        ballFlightFxReset(b);
       }
     }
     this.gameTime = st.t;
@@ -2798,8 +2800,11 @@ const game = {
     if (net.clientEvents.length > 0) {
       for (const ev of net.clientEvents) {
         if (ev.type === 'hit') {
+          // パーティクルは投げた人のhitfxで全員に表示
+          const thrower = ev.thrower >= 0 && ev.thrower < players.length ? players[ev.thrower] : null;
+          spawnHitFxFor(thrower, new THREE.Vector3(ev.x, ev.y, ev.z));
           if (humanPlayer && ev.thrower === humanPlayer.id) {
-            triggerHitEffect(new THREE.Vector3(ev.x, ev.y, ev.z));
+            triggerHitEffect(); // 画面フラッシュ+HIT!文字は自分の命中時のみ
             this.hitCount++;
           }
         }
@@ -3061,6 +3066,63 @@ const particles = [];
 // ジオメトリは共有、マテリアルは寿命が切れたら破棄する（GPUメモリの蓄積防止）
 const _particleGeo = new THREE.SphereGeometry(0.08, 5, 5);
 
+/* ── ボール飛行エフェクト（throwfx）── */
+// 細いラインだけでは視認できないため、ボール自体の発光 + 残像パフで見せる
+const trailPuffs = [];
+const _puffGeo = new THREE.SphereGeometry(0.13, 6, 6);
+function spawnTrailPuff(pos, color) {
+  let p = trailPuffs.find(t => !t.active);
+  if (!p) {
+    if (trailPuffs.length >= 70) return;
+    p = { mesh: new THREE.Mesh(_puffGeo, new THREE.MeshBasicMaterial({ transparent: true, depthWrite: false })), active: false, life: 0, maxLife: 0.4 };
+    scene.add(p.mesh);
+    trailPuffs.push(p);
+  }
+  p.active = true; p.life = p.maxLife;
+  p.mesh.visible = true;
+  p.mesh.position.copy(pos);
+  p.mesh.material.color.setHex(color);
+  p.mesh.material.opacity = 0.8;
+  p.mesh.scale.setScalar(1);
+}
+function updateTrailPuffs(dt) {
+  for (const p of trailPuffs) {
+    if (!p.active) continue;
+    p.life -= dt;
+    if (p.life <= 0) { p.active = false; p.mesh.visible = false; continue; }
+    const k = p.life / p.maxLife;
+    p.mesh.material.opacity = 0.8 * k;
+    p.mesh.scale.setScalar(0.35 + 0.65 * k);
+  }
+}
+
+// 飛行中のボールに投げた人のthrowfxを適用（ライン色 + 発光 + パフ）
+function ballFlightFx(b, thrower, dt) {
+  const tc = thrower && thrower.cosmetics ? COSMETICS.throwfx[thrower.cosmetics.throwfx] : null;
+  const col = tc && tc.trail !== null ? tc.trail : null;
+  b.trail.material.color.setHex(col !== null ? col : 0xff8844);
+  b.trail.material.opacity = col !== null ? 0.85 : 0.4;
+  if (col !== null) {
+    b.mesh.material.emissive.setHex(col);
+    b.mesh.material.emissiveIntensity = 0.55;
+    b._puffT = (b._puffT || 0) - dt;
+    if (b._puffT <= 0) { spawnTrailPuff(b.pos, col); b._puffT = 0.028; }
+  } else {
+    b.mesh.material.emissive.setHex(0x000000);
+  }
+}
+function ballFlightFxReset(b) {
+  b.mesh.material.emissive.setHex(0x000000);
+  b._puffT = 0;
+}
+
+// 命中エフェクト（hitfx）: 投げた人の装備に応じて当てられた側の位置で弾ける。全員から見える
+function spawnHitFxFor(thrower, pos) {
+  const h = thrower && thrower.cosmetics ? COSMETICS.hitfx[thrower.cosmetics.hitfx] : null;
+  if (!h || h.color === null) return; // ノーマルはパーティクル無し
+  spawnHitParticles(pos, h.classic ? null : h.color);
+}
+
 function spawnHitParticles(pos, tint) {
   // tint指定時（hitfxコスメ）はその色系統のパレットにする
   const colors = tint != null
@@ -3107,7 +3169,9 @@ function triggerJumpShotEffect() {
   sfx.throw();
 }
 
-function triggerHitEffect(hitPos) {
+// 画面フラッシュ + HIT!文字 + カメラシェイク（自分が当てたときの画面演出のみ。
+// ワールドに出るパーティクルは spawnHitFxFor が担当）
+function triggerHitEffect() {
   const flash = document.getElementById('hit-flash');
   flash.classList.add('active');
   setTimeout(() => flash.classList.remove('active'), 120);
@@ -3119,9 +3183,6 @@ function triggerHitEffect(hitPos) {
   ht.style.animation = 'hitPop 0.7s ease-out forwards';
 
   cameraShake = 0.18;
-  // 自分のhitfxコスメの色でエフェクトを出す
-  const hc = humanPlayer && humanPlayer.cosmetics ? COSMETICS.hitfx[humanPlayer.cosmetics.hitfx] : null;
-  spawnHitParticles(hitPos, hc ? hc.color : null);
 }
 
 /* ── Settings ── */
@@ -3677,6 +3738,7 @@ function animate() {
   requestAnimationFrame(animate);
   const dt = Math.min(clock.getDelta(), 0.05);
   updateParticles(dt);
+  updateTrailPuffs(dt);
   game.update(dt);
   const inMenu = (game.state === 'menu' || game.state === 'lobby');
   const inMatch = (game.state === 'countdown' || game.state === 'playing' || game.state === 'playing_client');

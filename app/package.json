@@ -1,0 +1,18 @@
+{
+  "name": "super-dodgeball",
+  "version": "1.0.0",
+  "description": "SUPER DODGEBALL - 3D first-person dodgeball game",
+  "private": true,
+  "scripts": {
+    "build": "node build-www.js",
+    "sync": "node build-www.js && npx cap sync"
+  },
+  "dependencies": {
+    "@capacitor/cli": "^8.4.1",
+    "@capacitor/core": "^8.4.1",
+    "@capacitor/ios": "^8.4.1"
+  },
+  "devDependencies": {
+    "@capacitor/assets": "^3.0.5"
+  }
+}

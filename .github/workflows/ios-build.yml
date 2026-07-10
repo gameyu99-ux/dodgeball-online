@@ -1,0 +1,105 @@
+# iOS ビルド & TestFlight アップロード
+# 配置先: リポジトリの .github/workflows/ios-build.yml
+#
+# 必要なGitHub Secrets（APPSTORE-GUIDE.md参照）:
+#   APPLE_TEAM_ID              - Apple Developer チームID (例: AB12CD34EF)
+#   IOS_DIST_CERT_P12          - Distribution証明書(.p12)のbase64
+#   IOS_DIST_CERT_PASSWORD     - .p12のパスワード
+#   IOS_PROVISIONING_PROFILE   - App Store用プロビジョニングプロファイル(.mobileprovision)のbase64
+#   IOS_PROFILE_NAME           - プロファイル名 (例: SuperDodgeball AppStore)
+#   ASC_KEY_ID                 - App Store Connect APIキーID
+#   ASC_ISSUER_ID              - App Store Connect Issuer ID
+#   ASC_KEY_P8                 - APIキー(.p8)の中身（base64不要、テキストそのまま）
+name: iOS Build & TestFlight
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install app dependencies
+        working-directory: app
+        run: npm ci
+
+      - name: Build web assets
+        working-directory: app
+        run: |
+          node fetch-three.js
+          node build-www.js
+
+      - name: Capacitor sync
+        working-directory: app
+        run: npx cap sync ios
+
+      - name: Import signing certificate
+        uses: apple-actions/import-codesign-certs@v3
+        with:
+          p12-file-base64: ${{ secrets.IOS_DIST_CERT_P12 }}
+          p12-password: ${{ secrets.IOS_DIST_CERT_PASSWORD }}
+
+      - name: Install provisioning profile
+        run: |
+          mkdir -p ~/Library/MobileDevice/Provisioning\ Profiles
+          echo "${{ secrets.IOS_PROVISIONING_PROFILE }}" | base64 --decode \
+            > ~/Library/MobileDevice/Provisioning\ Profiles/app.mobileprovision
+
+      - name: Archive
+        working-directory: app/ios/App
+        run: |
+          xcodebuild archive \
+            -project App.xcodeproj \
+            -scheme App \
+            -configuration Release \
+            -archivePath output/App.xcarchive \
+            -destination 'generic/platform=iOS' \
+            CODE_SIGN_STYLE=Manual \
+            DEVELOPMENT_TEAM="${{ secrets.APPLE_TEAM_ID }}" \
+            CODE_SIGN_IDENTITY="Apple Distribution" \
+            PROVISIONING_PROFILE_SPECIFIER="${{ secrets.IOS_PROFILE_NAME }}"
+
+      - name: Export IPA
+        working-directory: app/ios/App
+        run: |
+          cat > ExportOptions.plist <<EOF
+          <?xml version="1.0" encoding="UTF-8"?>
+          <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+          <plist version="1.0">
+          <dict>
+            <key>method</key><string>app-store-connect</string>
+            <key>teamID</key><string>${{ secrets.APPLE_TEAM_ID }}</string>
+            <key>signingStyle</key><string>manual</string>
+            <key>provisioningProfiles</key>
+            <dict>
+              <key>com.gameyu.superdodgeball</key>
+              <string>${{ secrets.IOS_PROFILE_NAME }}</string>
+            </dict>
+          </dict>
+          </plist>
+          EOF
+          xcodebuild -exportArchive \
+            -archivePath output/App.xcarchive \
+            -exportPath output \
+            -exportOptionsPlist ExportOptions.plist
+
+      - name: Upload to TestFlight
+        working-directory: app/ios/App
+        run: |
+          mkdir -p ~/.appstoreconnect/private_keys
+          echo "${{ secrets.ASC_KEY_P8 }}" > ~/.appstoreconnect/private_keys/AuthKey_${{ secrets.ASC_KEY_ID }}.p8
+          xcrun altool --upload-app -f output/*.ipa -t ios \
+            --apiKey "${{ secrets.ASC_KEY_ID }}" \
+            --apiIssuer "${{ secrets.ASC_ISSUER_ID }}"
+
+      - name: Upload IPA artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ios-ipa
+          path: app/ios/App/output/*.ipa

@@ -1,0 +1,12 @@
+{
+  "appId": "com.gameyu.superdodgeball",
+  "appName": "SUPER DODGEBALL",
+  "webDir": "www",
+  "ios": {
+    "contentInset": "never",
+    "backgroundColor": "#1a1a2e"
+  },
+  "server": {
+    "iosScheme": "capacitor"
+  }
+}

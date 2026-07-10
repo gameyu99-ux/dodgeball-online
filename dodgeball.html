@@ -590,6 +590,10 @@ scene.fog = new THREE.FogExp2(0x1a1a2e, 0.012);
 const isMobile = () =>
   (('ontouchstart' in window) || navigator.maxTouchPoints > 0) &&
   Math.min(window.innerWidth, window.innerHeight) <= 600;
+
+// Capacitorネイティブアプリ内での実行か（ゲーム本体はバンドル、通信のみ本番サーバーへ）
+const IS_APP = location.protocol === 'capacitor:' || location.protocol === 'file:' || !!window.Capacitor;
+const APP_SERVER_URL = 'wss://dodgeball-online.onrender.com';
 const camera = new THREE.PerspectiveCamera(78, window.innerWidth/window.innerHeight, 0.1, 140);
 const clock = new THREE.Clock();
 
@@ -1786,7 +1790,9 @@ function updateAuthUI() {
     userSpan.style.display = 'flex';
     document.getElementById('auth-name').textContent = fbUser.displayName || fbUser.email || 'ユーザー';
   } else {
-    loginBtn.style.display = 'block';
+    // アプリ内ではGoogleのポップアップログインが使えないためメール/パスワードのみ
+    // （サードパーティログインを出さないことでSign in with Apple必須化も回避）
+    loginBtn.style.display = IS_APP ? 'none' : 'block';
     emailBtn.style.display = 'inline-block';
     userSpan.style.display = 'none';
   }
@@ -2300,8 +2306,8 @@ const game = {
     document.getElementById('btn-ranked').addEventListener('click', () => {
       // Firebaseが有効な場合、ランクマッチはログイン必須（ランクをアカウントに紐付けるため）
       if (firebaseEnabled && !fbUser) {
-        alert('ランクマッチにはGoogleログインが必要です');
-        signInGoogle();
+        alert('ランクマッチにはログインが必要です');
+        if (IS_APP) openEmailAuthModal(); else signInGoogle();
         return;
       }
       this.ranked = true;
@@ -3448,7 +3454,7 @@ const net = {
   connect(callback) {
     if (this.ws && this.ws.readyState <= 1) { if (callback) callback(); return; }
     const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    this.ws = new WebSocket(`${proto}://${location.host}`);
+    this.ws = new WebSocket(IS_APP ? APP_SERVER_URL : `${proto}://${location.host}`);
     this.ws.onopen = () => { this.connected = true; if (callback) callback(); };
     this.ws.onclose = () => {
       this.connected = false;

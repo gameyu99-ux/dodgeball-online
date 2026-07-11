@@ -146,8 +146,9 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   #locker-preview{flex:none;height:220px;min-height:0}
   #skin-grid{max-height:none;overflow-y:visible}
 }
-.skin-card{background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 8px;text-align:center}
+.skin-card{background:rgba(0,0,0,.45);border:2px solid rgba(255,255,255,.18);border-radius:12px;padding:12px 8px;text-align:center;cursor:pointer}
 .skin-card.equipped{border-color:#0f0}
+.skin-card.previewing{border-color:#4ac0ff;box-shadow:0 0 10px rgba(74,192,255,.35)}
 .skin-swatch{width:54px;height:54px;border-radius:50%;margin:0 auto 8px;border:3px solid rgba(255,255,255,.25)}
 .skin-name{font-size:14px;font-weight:bold;margin-bottom:8px}
 .skin-btn{padding:7px 10px;font-size:13px;font-weight:bold;border:none;border-radius:8px;cursor:pointer;color:#fff;width:100%}
@@ -2063,6 +2064,7 @@ function doGacha(count) {
 
 /* ── ロッカーUI（左: 3Dプレビュー / 右: カテゴリ別グリッド） ── */
 let lockerCat = 'head';
+let lockerPreview = null; // 試着中の見た目（未所持含む）。装備するまで保存はされない
 let lockerPrev = null; // { renderer, scene, cam, model, running }
 
 function initLockerPreview() {
@@ -2103,9 +2105,17 @@ function lockerPreviewLoop() {
 function openLocker() {
   document.getElementById('locker').style.display = 'flex';
   initLockerPreview();
-  lockerPrev.model.applyCosmetics(_cosEquipped);
+  lockerPreview = { ..._cosEquipped };
+  lockerPrev.model.applyCosmetics(lockerPreview);
   renderLocker();
   if (!lockerPrev.running) { lockerPrev.running = true; requestAnimationFrame(lockerPreviewLoop); }
+}
+
+// カードクリック（未所持含む）でプレビューだけ切り替える。装備には影響しない
+function previewCosmetic(cat, id) {
+  lockerPreview[cat] = id;
+  if (lockerPrev) lockerPrev.model.applyCosmetics(lockerPreview);
+  renderLocker();
 }
 
 function cosSwatchStyle(cat, id, el) {
@@ -2138,8 +2148,9 @@ function renderLocker() {
   for (const [id, item] of Object.entries(COSMETICS[lockerCat])) {
     const owned = _cosOwned[lockerCat].includes(id);
     const equipped = _cosEquipped[lockerCat] === id;
+    const previewing = !equipped && lockerPreview[lockerCat] === id;
     const card = document.createElement('div');
-    card.className = 'skin-card' + (equipped ? ' equipped' : '');
+    card.className = 'skin-card' + (equipped ? ' equipped' : '') + (previewing ? ' previewing' : '') + (owned ? '' : ' unowned');
     const sw = document.createElement('div');
     sw.className = 'skin-swatch';
     cosSwatchStyle(lockerCat, id, sw);
@@ -2154,18 +2165,21 @@ function renderLocker() {
     } else if (owned) {
       btn.classList.add('equip');
       btn.textContent = '装備する';
-      btn.onclick = () => {
+      btn.onclick = e => {
+        e.stopPropagation();
         equipCosmetic(lockerCat, id);
-        if (lockerPrev) lockerPrev.model.applyCosmetics(_cosEquipped);
+        lockerPreview[lockerCat] = id;
+        if (lockerPrev) lockerPrev.model.applyCosmetics(lockerPreview);
         renderLocker();
       };
     } else {
-      // 未入手: ガチャでのみ入手可能
+      // 未入手: ガチャでのみ入手可能。ボタンでの装備はできないがカードクリックで試着はできる
       btn.classList.add('locked', 'rarity-' + item.rarity);
       btn.textContent = item.rarity + '｜ガチャ';
       btn.disabled = true;
-      card.classList.add('unowned');
     }
+    // カード自体をクリックすると、所持の有無に関わらずプレビューに反映（試着）
+    card.addEventListener('click', () => previewCosmetic(lockerCat, id));
     card.append(sw, nm, btn);
     grid.appendChild(card);
   }

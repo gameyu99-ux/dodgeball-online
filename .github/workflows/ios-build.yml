@@ -21,6 +21,16 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      - name: Select latest available Xcode
+        # Appleは提出に最新SDKを要求するため、ランナーに入っている最新のXcodeを明示的に選ぶ
+        # (macos-latestのデフォルトが古いXcodeを指していることがある)
+        run: |
+          ls /Applications | grep Xcode
+          LATEST=$(ls -d /Applications/Xcode_*.app | sort -V | tail -1)
+          echo "Using: $LATEST"
+          sudo xcode-select -s "$LATEST/Contents/Developer"
+          xcodebuild -version
+
       - uses: actions/setup-node@v4
         with:
           node-version: 22

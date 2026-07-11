@@ -3,3 +3,12 @@ www/
 ios/App/App/public/
 ios/App/output/
 *.ipa
+
+# 証明書・鍵ファイル（絶対にコミットしない）
+*.key
+*.csr
+*.cer
+*.p12
+*.p8
+*.mobileprovision
+*.b64

@@ -317,17 +317,18 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 @media (orientation:landscape) and (max-height:640px){
   /* ロビー（ともだちとプレイの待機画面）: BLUE/RED枠の間にルームキー・
      ボタンを挟む横並びにして、下の広告バナーにしっかり高さを残す */
-  #lobby{padding-top:4px;padding-bottom:4px}
-  #lobby h2{font-size:13px;margin-bottom:2px}
-  .room-key-label{font-size:9px}
-  .room-key-display{font-size:20px;letter-spacing:3px}
-  #player-list{margin:0;gap:14px;max-width:620px}
-  #lobby-mid{gap:5px}
-  .team-list{padding:4px;overflow-y:auto;max-height:140px}
-  .team-list h3{font-size:10px;margin-bottom:2px}
-  .player-entry{font-size:9px;padding:1px 6px;margin:1px 0}
-  .mp-btn-start{font-size:13px;padding:6px 20px}
-  #btn-lobby-back{padding:5px 14px;font-size:11px}
+  /* 上寄せにして、全員分表示してもなお下に広告分の余白が残る配置にする */
+  #lobby{padding-top:8px;padding-bottom:6px;justify-content:flex-start}
+  #lobby h2{font-size:15px;margin-bottom:4px}
+  .room-key-label{font-size:11px}
+  .room-key-display{font-size:28px;letter-spacing:5px}
+  #player-list{margin:0;gap:26px;max-width:640px}
+  #lobby-mid{gap:8px}
+  .team-list{padding:6px;overflow-y:visible;max-height:none}
+  .team-list h3{font-size:11px;margin-bottom:3px}
+  .player-entry{font-size:10px;padding:2px 7px;margin:1px 0}
+  .mp-btn-start{font-size:16px;padding:9px 26px}
+  #btn-lobby-back{padding:7px 18px;font-size:13px}
   #ad-slot-lobby{height:50px;margin:6px auto 0;font-size:11px}
   /* ロッカー: プレビューを小さくし、アイテムグリッドだけ内部スクロール */
   #locker{justify-content:flex-start;overflow:hidden;padding:6px 0}

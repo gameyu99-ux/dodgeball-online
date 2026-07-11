@@ -206,6 +206,9 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .player-entry.ai{color:#888;opacity:.4;font-style:italic}
 #lobby-status{font-size:14px;opacity:.6;margin:8px 0}
 .mp-btn-start{background:linear-gradient(135deg,#e74c3c,#c0392b);font-size:22px;padding:16px 40px;margin-top:10px}
+/* 広告バナー枠: ネイティブ広告はWebViewの上に別レイヤーで重なるため、
+   このスペースを空けておかないとUIと重なってしまう */
+.ad-banner-slot{width:320px;max-width:92vw;height:50px;background:rgba(255,255,255,.05);border:1px dashed rgba(255,255,255,.2);border-radius:6px;margin:6px auto;display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,.3);flex-shrink:0}
 #conn-status{position:fixed;top:4px;right:10px;color:#fff;font-size:11px;padding:3px 10px;border-radius:8px;pointer-events:none;z-index:112;display:none;background:rgba(0,0,0,.6)}
 .mode-online{background:linear-gradient(135deg,#e67e22,#d35400)}
 #matchmaking{position:fixed;inset:0;background:url('bg.jpg') center/cover no-repeat;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
@@ -309,17 +312,18 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 /* 横持ちスマホ: ロビーとロッカーはスクロールなしで1画面に収める */
 @media (orientation:landscape) and (max-height:640px){
   /* ロビー（ともだちとプレイの待機画面） */
-  #lobby{padding-top:6px;padding-bottom:6px}
-  #lobby h2{font-size:16px;margin-bottom:0}
-  .room-key-label{margin-top:0;font-size:10px}
-  .room-key-display{font-size:22px;letter-spacing:4px;margin:0 0 2px}
-  #player-list{margin:4px 0;gap:8px;flex:1;min-height:0;max-width:460px}
-  .team-list{padding:5px;overflow-y:auto}
-  .team-list h3{font-size:11px;margin-bottom:3px}
-  .player-entry{font-size:10px;padding:1px 6px;margin:1px 0}
-  #lobby-status{font-size:10px;margin:2px 0}
-  .mp-btn-start{font-size:14px;padding:8px 22px;margin:3px}
-  #btn-lobby-back{padding:7px 16px;font-size:12px;margin:2px}
+  #lobby{padding-top:4px;padding-bottom:4px}
+  #lobby h2{font-size:14px;margin-bottom:0}
+  .room-key-label{margin-top:0;font-size:9px}
+  .room-key-display{font-size:19px;letter-spacing:3px;margin:0 0 1px}
+  #player-list{margin:2px 0;gap:8px;flex:1;min-height:0;max-width:460px}
+  .team-list{padding:4px;overflow-y:auto}
+  .team-list h3{font-size:10px;margin-bottom:2px}
+  .player-entry{font-size:9px;padding:1px 6px;margin:1px 0}
+  #lobby-status{font-size:9px;margin:1px 0}
+  .mp-btn-start{font-size:13px;padding:6px 20px;margin:2px}
+  #btn-lobby-back{padding:5px 14px;font-size:11px;margin:1px}
+  #ad-slot-lobby{height:32px;margin:2px auto;font-size:9px}
   /* ロッカー: プレビューを小さくし、アイテムグリッドだけ内部スクロール */
   #locker{justify-content:flex-start;overflow:hidden;padding:6px 0}
   #locker h2{font-size:16px;margin-bottom:0}
@@ -452,6 +456,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   </div>
   <div id="lobby-status">プレイヤーを待っています...</div>
   <button class="mp-btn mp-btn-start" id="btn-start-mp" style="display:none">ゲーム開始</button>
+  <div id="ad-slot-lobby" class="ad-banner-slot">広告</div>
   <button class="mp-btn mp-btn-back" id="btn-lobby-back">退出</button>
 </div>
 

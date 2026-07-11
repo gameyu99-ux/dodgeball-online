@@ -303,8 +303,44 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 }
 /* 縦に収まらない場合はスクロールできるように（中央寄せのままだと上端が切れて届かなくなる） */
 @media (max-height:640px){
-  #menu,#mp-menu,#lobby,#online-select,#matchmaking,#result,#pause-menu,#locker{justify-content:flex-start;overflow-y:auto;padding-top:12px;padding-bottom:12px}
-  #skin-grid{max-height:none;overflow-y:visible}
+  #menu,#mp-menu,#online-select,#matchmaking,#result,#pause-menu{justify-content:flex-start;overflow-y:auto;padding-top:12px;padding-bottom:12px}
+}
+/* 横持ちスマホ: ロビーとロッカーはスクロールなしで1画面に収める */
+@media (orientation:landscape) and (max-height:640px){
+  /* ロビー（ともだちとプレイの待機画面） */
+  #lobby{padding-top:6px;padding-bottom:6px}
+  #lobby h2{font-size:16px;margin-bottom:0}
+  .room-key-label{margin-top:0;font-size:10px}
+  .room-key-display{font-size:22px;letter-spacing:4px;margin:0 0 2px}
+  #player-list{margin:4px 0;gap:8px;flex:1;min-height:0;max-width:460px}
+  .team-list{padding:5px;overflow-y:auto}
+  .team-list h3{font-size:11px;margin-bottom:3px}
+  .player-entry{font-size:10px;padding:1px 6px;margin:1px 0}
+  #lobby-status{font-size:10px;margin:2px 0}
+  .mp-btn-start{font-size:14px;padding:8px 22px;margin:3px}
+  #btn-lobby-back{padding:7px 16px;font-size:12px;margin:2px}
+  /* ロッカー: プレビューを小さくし、アイテムグリッドだけ内部スクロール */
+  #locker{justify-content:flex-start;overflow:hidden;padding:6px 0}
+  #locker h2{font-size:16px;margin-bottom:0}
+  #locker-coins{font-size:13px;margin-bottom:0}
+  .locker-hint{display:none}
+  #gacha-bar{margin-bottom:4px;gap:8px}
+  #gacha-bar button{padding:6px 12px;font-size:12px}
+  #gacha-rates{font-size:9px}
+  #locker-main{flex:1;min-height:0;gap:10px}
+  #locker-preview{flex:0 0 140px;min-height:0}
+  #locker-right{min-height:0}
+  #locker-tabs{margin-bottom:5px}
+  .locker-tab{padding:4px 2px;font-size:11px}
+  .locker-tab .locker-tab-item{font-size:9px}
+  #skin-grid{flex:1;min-height:0;max-height:none;overflow-y:auto;grid-template-columns:repeat(auto-fill,minmax(92px,1fr));gap:8px}
+  .skin-card{padding:7px 4px}
+  .skin-swatch{width:36px;height:36px;margin-bottom:4px}
+  .skin-swatch.emoji{font-size:19px}
+  .skin-name{font-size:11px;margin-bottom:4px}
+  .skin-btn{padding:4px 6px;font-size:11px}
+  .skin-btn.locked{font-size:10px}
+  #btn-locker-back{padding:7px 16px;font-size:12px;margin-top:5px}
 }
 </style>
 </head>
@@ -353,7 +389,6 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 
 <div id="menu">
   <h1><img src="title-logo.png" alt="SUPER DODGEBALL"></h1>
-  <p>一人称視点ドッジボール ─ 10 vs 10（外野あり）</p>
   <div id="auth-bar">
     <button id="btn-login">G  Googleでログイン</button>
     <button id="btn-email-login">✉ メールでログイン</button>

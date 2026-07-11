@@ -49,6 +49,14 @@ jobs:
         working-directory: app
         run: npx cap sync ios
 
+      - name: Bump build number
+        # Appleは同じビルド番号の再アップロードを拒否するため、実行のたびにGitHub Actionsの
+        # run_number（1回のトリガーごとに増加する連番）をCURRENT_PROJECT_VERSIONに書き込む
+        working-directory: app/ios/App
+        run: |
+          sed -i '' "s/CURRENT_PROJECT_VERSION = [0-9]*/CURRENT_PROJECT_VERSION = ${{ github.run_number }}/g" App.xcodeproj/project.pbxproj
+          grep CURRENT_PROJECT_VERSION App.xcodeproj/project.pbxproj
+
       - name: Import signing certificate
         uses: apple-actions/import-codesign-certs@v3
         with:

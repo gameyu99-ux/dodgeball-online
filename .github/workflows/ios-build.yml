@@ -37,7 +37,9 @@ jobs:
 
       - name: Install app dependencies
         working-directory: app
-        run: npm ci
+        # devDependencies(@capacitor/assets)はローカルのアイコン生成専用で、そのネイティブ依存
+        # sharpがランナー更新でビルド不能になったためCIでは除外する。アイコンはコミット済み。
+        run: npm ci --omit=dev
 
       - name: Build web assets
         working-directory: app

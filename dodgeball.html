@@ -247,6 +247,14 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 #auth-user{display:flex;align-items:center;gap:10px;background:rgba(0,0,0,.45);border-radius:8px;padding:7px 12px;font-size:13px}
 #auth-name{color:#8f8;font-weight:bold}
 #btn-logout{padding:4px 10px;font-size:11px;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.3);border-radius:6px;cursor:pointer}
+#btn-delete-account{padding:4px 10px;font-size:11px;background:rgba(255,60,60,.18);color:#ff9a9a;border:1px solid rgba(255,80,80,.45);border-radius:6px;cursor:pointer}
+#delete-account-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:120;flex-direction:column}
+#delete-account-modal.show{display:flex}
+.del-acc-box{background:rgba(20,20,50,.97);border:2px solid rgba(255,80,80,.5);border-radius:16px;padding:26px 30px;text-align:center;color:#fff;width:min(340px,90vw)}
+.del-acc-box h3{margin:0 0 12px;font-size:19px;color:#ff8a8a}
+.del-acc-box p{font-size:13px;line-height:1.6;margin:0 0 14px;color:#e6e6f0}
+.del-acc-box .del-warn{background:rgba(255,60,60,.1);border-radius:8px;padding:10px 12px;font-size:12.5px;color:#ffb3b3}
+.mp-btn-danger{background:linear-gradient(135deg,#c0392b,#e74c3c);color:#fff}
 #btn-email-login{padding:9px 14px;font-size:12px;font-weight:bold;background:rgba(255,255,255,.15);color:#fff;border:1px solid rgba(255,255,255,.35);border-radius:8px;cursor:pointer;margin-left:6px}
 #btn-email-login:hover{background:rgba(255,255,255,.25)}
 #email-auth-modal{position:fixed;inset:0;background:rgba(0,0,0,.6);display:none;align-items:center;justify-content:center;z-index:110;flex-direction:column}
@@ -406,6 +414,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
     <span id="auth-user" style="display:none">
       <span id="auth-name"></span>
       <button id="btn-logout">ログアウト</button>
+      <button id="btn-delete-account">アカウント削除</button>
     </span>
   </div>
   <div id="mode-select">
@@ -494,6 +503,18 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
     <button class="mp-btn mp-btn-create" id="btn-email-submit">ログイン</button>
     <p class="email-forgot" id="btn-email-forgot">パスワードをお忘れですか？</p>
     <button class="mp-btn mp-btn-back" id="btn-email-back">戻る</button>
+  </div>
+</div>
+
+<div id="delete-account-modal">
+  <div class="del-acc-box">
+    <h3>⚠ アカウント削除</h3>
+    <p>アカウントと、それに紐づくデータ（ランク・コイン・所持アイテム）がすべて<b>完全に削除</b>されます。この操作は取り消せません。</p>
+    <div class="del-warn" id="del-acc-warn">確認のため、パスワードを入力してください。</div>
+    <input type="password" id="del-acc-password" class="mp-input email-input" placeholder="パスワード" autocomplete="current-password" style="margin-top:12px">
+    <div class="mp-error" id="del-acc-error"></div>
+    <button class="mp-btn mp-btn-danger" id="btn-del-acc-confirm">アカウントを完全に削除する</button>
+    <button class="mp-btn mp-btn-back" id="btn-del-acc-cancel">キャンセル</button>
   </div>
 </div>
 
@@ -1898,6 +1919,80 @@ function forgotPassword() {
   fbAuth.sendPasswordResetEmail(email)
     .then(() => { errEl.style.color = '#4f8'; errEl.textContent = 'パスワード再設定メールを送信しました'; })
     .catch(e => { errEl.style.color = ''; errEl.textContent = emailErrorText(e); });
+}
+
+/* ── アカウント削除（App Store ガイドライン5.1.1(v) 対応）── */
+function isPasswordAccount() {
+  return !!(fbUser && fbUser.providerData.some(p => p.providerId === 'password'));
+}
+function openDeleteAccountModal() {
+  if (!fbUser) return;
+  const pwInput = document.getElementById('del-acc-password');
+  const warn = document.getElementById('del-acc-warn');
+  const err = document.getElementById('del-acc-error');
+  err.textContent = '';
+  pwInput.value = '';
+  if (isPasswordAccount()) {
+    warn.textContent = '確認のため、パスワードを入力してください。';
+    pwInput.style.display = 'block';
+  } else {
+    warn.textContent = '確認のため、削除前にもう一度ログインを求められます。';
+    pwInput.style.display = 'none';
+  }
+  document.getElementById('delete-account-modal').classList.add('show');
+}
+function closeDeleteAccountModal() {
+  document.getElementById('delete-account-modal').classList.remove('show');
+}
+async function confirmDeleteAccount() {
+  if (!fbUser) return;
+  const btn = document.getElementById('btn-del-acc-confirm');
+  const err = document.getElementById('del-acc-error');
+  const pwInput = document.getElementById('del-acc-password');
+  err.style.color = '';
+  err.textContent = '';
+  btn.disabled = true;
+  const prevLabel = btn.textContent;
+  btn.textContent = '削除中…';
+  try {
+    // 1) 再認証（Firebaseはアカウント削除に直近のログインを要求する）
+    if (isPasswordAccount()) {
+      const pw = pwInput.value;
+      if (!pw) { err.textContent = 'パスワードを入力してください'; return; }
+      const cred = firebase.auth.EmailAuthProvider.credential(fbUser.email, pw);
+      await fbUser.reauthenticateWithCredential(cred);
+    } else {
+      const provider = new firebase.auth.GoogleAuthProvider();
+      await fbUser.reauthenticateWithPopup(provider);
+    }
+    const uid = fbUser.uid;
+    // 2) クラウド上のユーザーデータを削除（認証が有効なうちに）
+    if (fbDB) { try { await fbDB.collection('users').doc(uid).delete(); } catch (e) { console.warn('doc delete failed:', e); } }
+    // 3) 認証アカウント本体を削除
+    await fbUser.delete();
+    // 4) 端末内の関連データもクリア
+    try {
+      localStorage.removeItem('db_rank_rp');
+      localStorage.removeItem('db_coins');
+      localStorage.removeItem('db_cos_owned');
+      localStorage.removeItem('db_cos_equipped');
+    } catch (e) {}
+    closeDeleteAccountModal();
+    alert('アカウントを削除しました。ご利用ありがとうございました。');
+  } catch (e) {
+    if (e.code === 'auth/wrong-password' || e.code === 'auth/invalid-credential') {
+      err.textContent = 'パスワードが違います';
+    } else if (e.code === 'auth/too-many-requests') {
+      err.textContent = '試行回数が多すぎます。しばらくしてから再試行してください';
+    } else if (e.code === 'auth/popup-closed-by-user' || e.code === 'auth/cancelled-popup-request') {
+      err.textContent = '認証がキャンセルされました';
+    } else {
+      err.textContent = '削除に失敗しました: ' + (e.message || e.code || e);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.textContent = prevLabel;
+  }
 }
 
 /* ── コスメ（部位別スキン）& コイン ── */
@@ -3782,6 +3877,9 @@ game.init();
 initFirebase();
 document.getElementById('btn-login').addEventListener('click', signInGoogle);
 document.getElementById('btn-logout').addEventListener('click', signOutGoogle);
+document.getElementById('btn-delete-account').addEventListener('click', openDeleteAccountModal);
+document.getElementById('btn-del-acc-confirm').addEventListener('click', confirmDeleteAccount);
+document.getElementById('btn-del-acc-cancel').addEventListener('click', closeDeleteAccountModal);
 document.getElementById('btn-email-login').addEventListener('click', openEmailAuthModal);
 document.getElementById('btn-email-back').addEventListener('click', closeEmailAuthModal);
 document.getElementById('tab-login').addEventListener('click', () => setEmailAuthMode('login'));

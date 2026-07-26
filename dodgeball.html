@@ -619,11 +619,30 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 <div id="jump-text">JUMP SHOT!</div>
 
 <script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
-<script src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
+<!-- FirebaseはdeferでゲームDOM/イベント登録の後に読み込む。同期読み込みだと通信が遅い環境で
+     この下のゲーム本体スクリプトが実行されず、画面は見えるのにボタンが全て無反応になる -->
+<script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-app-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-auth-compat.js"></script>
+<script defer src="https://www.gstatic.com/firebasejs/10.14.1/firebase-firestore-compat.js"></script>
 <script>
 'use strict';
+
+// Three.jsが読めていない場合は何をしても動かないので、無反応な画面のままにせず理由を伝える
+// （アプリ版はThree.jsを同梱しているため通常ここには来ない）
+if (typeof THREE === 'undefined') {
+  const el = document.createElement('div');
+  el.style.cssText = 'position:fixed;inset:0;z-index:9999;display:flex;flex-direction:column;gap:14px;' +
+    'align-items:center;justify-content:center;background:#12122a;color:#fff;font-size:16px;text-align:center;padding:24px';
+  el.innerHTML = '<div>ゲームの読み込みに失敗しました</div>' +
+    '<div style="font-size:13px;opacity:.7">通信環境を確認して、ページを再読み込みしてください</div>';
+  const btn = document.createElement('button');
+  btn.textContent = '再読み込み';
+  btn.style.cssText = 'padding:12px 28px;font-size:15px;border:none;border-radius:8px;background:#ff6622;color:#fff';
+  btn.onclick = () => location.reload();
+  el.appendChild(btn);
+  document.body.appendChild(el);
+  throw new Error('THREE.js failed to load');
+}
 
 const CFG = {
   COURT_L: 28, COURT_W: 14, OUTFIELD_D: 8,
@@ -650,15 +669,34 @@ renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
 renderer.shadowMap.enabled = true;
 renderer.shadowMap.type = THREE.PCFSoftShadowMap;
 
+// 描画コンテキストの喪失に備える。iOSではアプリを長時間バックグラウンドにして戻ったときなどに
+// 失われることがあり、何もしないと以降ずっと真っ暗な画面のままになる。
+// 喪失時は既定動作を止めて復帰の余地を残すだけにする（画面を覆う案内や自動リロードを入れると、
+// 一時的な喪失でも操作不能や再読み込みの繰り返しを招くため何もしない）
+canvas.addEventListener('webglcontextlost', e => { e.preventDefault(); });
+// 復帰したときだけ読み込み直して描画を作り直す。繰り返しを避けるため1セッション1回まで
+canvas.addEventListener('webglcontextrestored', () => {
+  try {
+    if (sessionStorage.getItem('db_gl_reloaded')) return;
+    sessionStorage.setItem('db_gl_reloaded', '1');
+  } catch (e) { return; }
+  // コイン・スキン・設定はその都度保存済みなので読み込み直しても失われない
+  location.reload();
+});
+
 const scene = new THREE.Scene();
 scene.background = new THREE.Color(0x1a1a2e);
 scene.fog = new THREE.FogExp2(0x1a1a2e, 0.012);
 
-// 短い辺で判定することで横持ち（幅844px等）でもスマホ扱いになる。
-// 幅で判定すると横向きのとき768pxを超えてPC用FOVが適用されてしまう
+// タッチ操作の端末（スマホ/タブレット）判定。ネイティブアプリは常にタッチ操作。
+// pointer:coarse で判定することで、画面の大きいiPadもタッチ用FOVになる
+// （サイズだけで判定するとiPadがPC扱いになり視野角が広すぎて敵が小さく見える）。
+// マウスを持つタッチ対応PCは pointer:fine なのでPC扱いのまま
 const isMobile = () =>
-  (('ontouchstart' in window) || navigator.maxTouchPoints > 0) &&
-  Math.min(window.innerWidth, window.innerHeight) <= 600;
+  IS_APP ||
+  ((('ontouchstart' in window) || navigator.maxTouchPoints > 0) &&
+   (window.matchMedia('(pointer: coarse)').matches ||
+    Math.min(window.innerWidth, window.innerHeight) <= 600));
 
 // Capacitorネイティブアプリ内での実行か（ゲーム本体はバンドル、通信のみ本番サーバーへ）
 const IS_APP = location.protocol === 'capacitor:' || location.protocol === 'file:' || !!window.Capacitor;
@@ -972,7 +1010,9 @@ class Player {
     canvas.width = 256; canvas.height = 56;
     const ctx = canvas.getContext('2d');
     ctx.fillStyle = isHuman ? 'rgba(0,30,80,0.7)' : 'rgba(30,30,30,0.6)';
-    ctx.beginPath(); ctx.roundRect(6, 6, 244, 44, 8); ctx.fill();
+    // roundRectはiOS16.4以降のAPI。対応下限がiOS15のため未対応端末では角丸なしで描く
+    if (ctx.roundRect) { ctx.beginPath(); ctx.roundRect(6, 6, 244, 44, 8); ctx.fill(); }
+    else ctx.fillRect(6, 6, 244, 44);
     ctx.font = `bold 26px sans-serif`;
     ctx.fillStyle = isHuman ? '#88ccff' : '#aaaaaa';
     ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
@@ -1773,14 +1813,21 @@ const FIREBASE_CONFIG = {
 };
 
 let fbAuth = null, fbDB = null, fbUser = null;
-const firebaseEnabled = typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY';
+// Firebaseはdeferで後から読み込まれるため、この時点ではまだ存在しない。
+// initFirebase()（DOMContentLoadedで実行）の中で判定する
+let firebaseEnabled = false;
 
 function initFirebase() {
+  const bar = document.getElementById('auth-bar');
+  if (fbAuth) return; // 初期化済み（読み込み待ちのため複数回呼ばれる）
+  firebaseEnabled = typeof firebase !== 'undefined' && FIREBASE_CONFIG.apiKey !== 'YOUR_API_KEY';
   if (!firebaseEnabled) {
-    const bar = document.getElementById('auth-bar');
+    // Firebaseが読み込めなくてもソロ/ともだちプレイは遊べる。
+    // 押しても何も起きないログインUIを残さないよう隠す（後から読み込めたら再表示する）
     if (bar) bar.style.display = 'none';
     return;
   }
+  if (bar) bar.style.display = '';
   firebase.initializeApp(FIREBASE_CONFIG);
   fbAuth = firebase.auth();
   fbDB = firebase.firestore();
@@ -2196,30 +2243,50 @@ function initLockerPreview() {
 function lockerPreviewLoop() {
   if (!lockerPrev) return;
   if (document.getElementById('locker').style.display !== 'flex') { lockerPrev.running = false; return; }
-  lockerPrev.spin += 0.012;
-  lockerPrev.model.mesh.rotation.y = lockerPrev.spin;
-  const c = lockerPrev.renderer.domElement;
-  const w = c.clientWidth, h = c.clientHeight;
-  if (w > 0 && h > 0 && (c.width !== Math.floor(w * lockerPrev.renderer.getPixelRatio()) || c.height !== Math.floor(h * lockerPrev.renderer.getPixelRatio()))) {
-    lockerPrev.renderer.setSize(w, h, false);
-    lockerPrev.cam.aspect = w / h;
-    lockerPrev.cam.updateProjectionMatrix();
+  try {
+    lockerPrev.spin += 0.012;
+    lockerPrev.model.mesh.rotation.y = lockerPrev.spin;
+    const c = lockerPrev.renderer.domElement;
+    const w = c.clientWidth, h = c.clientHeight;
+    if (w > 0 && h > 0 && (c.width !== Math.floor(w * lockerPrev.renderer.getPixelRatio()) || c.height !== Math.floor(h * lockerPrev.renderer.getPixelRatio()))) {
+      lockerPrev.renderer.setSize(w, h, false);
+      lockerPrev.cam.aspect = w / h;
+      lockerPrev.cam.updateProjectionMatrix();
+    }
+    lockerPrev.renderer.render(lockerPrev.scene, lockerPrev.cam);
+  } catch (e) {
+    // 描画に失敗（コンテキストロストなど）してもアイテム一覧の操作は続けられるようにする
+    console.warn('locker preview stopped:', e);
+    lockerPrev.running = false;
+    const pv = document.getElementById('locker-preview');
+    if (pv) pv.style.display = 'none';
+    lockerPrev = null;
+    return;
   }
-  lockerPrev.renderer.render(lockerPrev.scene, lockerPrev.cam);
   requestAnimationFrame(lockerPreviewLoop);
 }
 
 function openLocker() {
   document.getElementById('locker').style.display = 'flex';
-  initLockerPreview();
-  lockerPreview = { ..._cosEquipped };
-  lockerPrev.model.applyCosmetics(lockerPreview);
+  lockerPreview = { ..._cosEquipped }; // 3Dプレビューの成否に関わらず先に確定させる
+  try {
+    initLockerPreview();
+    lockerPrev.model.applyCosmetics(lockerPreview);
+  } catch (e) {
+    // WebGLコンテキストが作れない端末/状況（iOSの同時コンテキスト上限、メモリ不足など）では
+    // 3Dプレビューだけ諦め、アイテム一覧とガチャは通常どおり使えるようにする
+    console.warn('locker preview unavailable:', e);
+    lockerPrev = null;
+    const pv = document.getElementById('locker-preview');
+    if (pv) pv.style.display = 'none';
+  }
   renderLocker();
-  if (!lockerPrev.running) { lockerPrev.running = true; requestAnimationFrame(lockerPreviewLoop); }
+  if (lockerPrev && !lockerPrev.running) { lockerPrev.running = true; requestAnimationFrame(lockerPreviewLoop); }
 }
 
 // カードクリック（未所持含む）でプレビューだけ切り替える。装備には影響しない
 function previewCosmetic(cat, id) {
+  if (!lockerPreview) lockerPreview = { ..._cosEquipped };
   lockerPreview[cat] = id;
   if (lockerPrev) lockerPrev.model.applyCosmetics(lockerPreview);
   renderLocker();
@@ -2252,10 +2319,12 @@ function renderLocker() {
     t.querySelector('.locker-tab-item').textContent = eq.name;
   });
   grid.innerHTML = '';
+  // ロッカーを開く前でも呼ばれ得る（クラウド同期の完了時など）ので装備中の見た目で代替する
+  const preview = lockerPreview || _cosEquipped;
   for (const [id, item] of Object.entries(COSMETICS[lockerCat])) {
     const owned = _cosOwned[lockerCat].includes(id);
     const equipped = _cosEquipped[lockerCat] === id;
-    const previewing = !equipped && lockerPreview[lockerCat] === id;
+    const previewing = !equipped && preview[lockerCat] === id;
     const card = document.createElement('div');
     card.className = 'skin-card' + (equipped ? ' equipped' : '') + (previewing ? ' previewing' : '') + (owned ? '' : ' unowned');
     const sw = document.createElement('div');
@@ -2275,9 +2344,7 @@ function renderLocker() {
       btn.onclick = e => {
         e.stopPropagation();
         equipCosmetic(lockerCat, id);
-        lockerPreview[lockerCat] = id;
-        if (lockerPrev) lockerPrev.model.applyCosmetics(lockerPreview);
-        renderLocker();
+        previewCosmetic(lockerCat, id); // プレビューも装備に合わせる（未初期化でも安全）
       };
     } else {
       // 未入手: ガチャでのみ入手可能。ボタンでの装備はできないがカードクリックで試着はできる
@@ -3431,20 +3498,30 @@ function setupSettings() {
 }
 
 /* ── Audio ── */
-let _ac = null, _seMaster = null, _bgmMaster = null;
+let _ac = null, _seMaster = null, _bgmMaster = null, _acFailed = false;
+// AudioContextが使えない環境（未対応・リソース枯渇など）ではnullを返す。
+// 例外を投げるとゲームループや投げ処理まで巻き込んで止まるため、必ず無音で継続させる
 const getAC = () => {
-  if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
-  if (_ac.state === 'suspended') _ac.resume();
+  if (_acFailed) return null;
+  try {
+    if (!_ac) _ac = new (window.AudioContext || window.webkitAudioContext)();
+    if (_ac.state === 'suspended') _ac.resume();
+  } catch (e) {
+    _acFailed = true; _ac = null;
+    return null;
+  }
   return _ac;
 };
 const getSEDest = () => {
   const ac = getAC();
+  if (!ac) return null;
   if (!_seMaster) { _seMaster = ac.createGain(); _seMaster.connect(ac.destination); }
   _seMaster.gain.value = settings.seVol;
   return _seMaster;
 };
 const getBGMDest = () => {
   const ac = getAC();
+  if (!ac) return null;
   if (!_bgmMaster) { _bgmMaster = ac.createGain(); _bgmMaster.connect(ac.destination); }
   _bgmMaster.gain.value = settings.bgmVol;
   return _bgmMaster;
@@ -3472,8 +3549,9 @@ function playBGM(name) {
   if (_bgmCurrent === name) return;
   const buf = _bgmBuffers[name];
   if (!buf) return; // デコード未完了。次フレームで再試行
-  stopBGM();
   const ac = getAC();
+  if (!ac) return;  // 音声が使えない端末では無音で続行
+  stopBGM();
   const src = ac.createBufferSource();
   src.buffer = buf; src.loop = true;
   const gain = ac.createGain();
@@ -3588,6 +3666,15 @@ const sfx = {
     });
   }
 };
+
+// SEの失敗（音声非対応・リソース不足など）でゲーム進行が止まらないよう、全SEを個別に保護する。
+// 投げ・命中・カウントダウンはゲームループから呼ばれるため、例外が漏れると試合ごと止まる
+for (const k of Object.keys(sfx)) {
+  const orig = sfx[k];
+  sfx[k] = function (...args) {
+    try { return orig.apply(this, args); } catch (e) { /* 無音で継続 */ }
+  };
+}
 
 
 
@@ -3874,7 +3961,17 @@ function updateLobbyPlayers(playerList) {
 }
 
 game.init();
-initFirebase();
+updateAuthUI(); // Firebase読み込み前にログインUIを未ログイン状態で整える（アプリではGoogleボタンを隠す）
+// Firebaseはdefer読み込みなのでパース完了後に初期化する（読み込み失敗時もゲームは動く）
+if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initFirebase);
+else initFirebase();
+// 通信が遅い/届かない環境では上のDOMContentLoadedが長く来ないため、
+// 1秒ごとに様子を見てログインUIの表示/非表示を合わせる（読み込めたら初期化して再表示）
+let _fbTries = 0;
+const _fbPoll = setInterval(() => {
+  initFirebase();
+  if (fbAuth || ++_fbTries >= 30) clearInterval(_fbPoll);
+}, 1000);
 document.getElementById('btn-login').addEventListener('click', signInGoogle);
 document.getElementById('btn-logout').addEventListener('click', signOutGoogle);
 document.getElementById('btn-delete-account').addEventListener('click', openDeleteAccountModal);
@@ -3888,24 +3985,30 @@ document.getElementById('btn-email-submit').addEventListener('click', submitEmai
 document.getElementById('btn-email-forgot').addEventListener('click', forgotPassword);
 document.getElementById('email-auth-password').addEventListener('keydown', e => { if (e.key === 'Enter') submitEmailAuth(); });
 
+let _frameErrs = 0;
 function animate() {
   requestAnimationFrame(animate);
-  const dt = Math.min(clock.getDelta(), 0.05);
-  updateParticles(dt);
-  updateTrailPuffs(dt);
-  game.update(dt);
-  const inMenu = (game.state === 'menu' || game.state === 'lobby');
-  const inMatch = (game.state === 'countdown' || game.state === 'playing' || game.state === 'playing_client');
-  if (_bgmUnlocked) {
-    if (inMenu) playBGM('menu');
-    else if (inMatch) playBGM('game');
-    else stopBGM();
-  }
-  if (game.state === 'menu' || game.state === 'lobby') {
-    const t = performance.now() * 0.001;
-    camera.position.set(Math.sin(t*0.2)*8, 5, Math.cos(t*0.2)*8);
-    camera.lookAt(0, 1, 0);
-    renderer.render(scene, camera);
+  // 1フレームの想定外エラーで以降の描画が止まらないようにする（エラーログは数回だけ出す）
+  try {
+    const dt = Math.min(clock.getDelta(), 0.05);
+    updateParticles(dt);
+    updateTrailPuffs(dt);
+    game.update(dt);
+    const inMenu = (game.state === 'menu' || game.state === 'lobby');
+    const inMatch = (game.state === 'countdown' || game.state === 'playing' || game.state === 'playing_client');
+    if (_bgmUnlocked) {
+      if (inMenu) playBGM('menu');
+      else if (inMatch) playBGM('game');
+      else stopBGM();
+    }
+    if (inMenu) {
+      const t = performance.now() * 0.001;
+      camera.position.set(Math.sin(t*0.2)*8, 5, Math.cos(t*0.2)*8);
+      camera.lookAt(0, 1, 0);
+      renderer.render(scene, camera);
+    }
+  } catch (e) {
+    if (_frameErrs++ < 5) console.error('frame error:', e);
   }
 }
 animate();

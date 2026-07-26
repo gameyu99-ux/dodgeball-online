@@ -988,7 +988,9 @@ const server = http.createServer((req, res) => {
 /* ══════════════════════════════════════════
    WebSocket server + message handling
    ══════════════════════════════════════════ */
-const wss = new WebSocketServer({ server });
+// maxPayload: クライアントから来るのは小さな入力パケットのみ。巨大な送信でメモリを
+// 食い潰されないよう64KBで打ち切る（超過した接続はwsが自動で閉じる）
+const wss = new WebSocketServer({ server, maxPayload: 64 * 1024 });
 const rooms = new Map();
 
 function genKey() {
@@ -1071,6 +1073,32 @@ function cleanSkin(s) {
   return out;
 }
 
+// クライアント申告の入力検証。不正な型・NaN・Infinityをそのまま物理に流すと
+// 座標がNaNになり同じ部屋の全員のゲームが壊れる（かつ以前はサーバー自体が落ちていた）
+const TAU = Math.PI * 2;
+function cleanInput(inp) {
+  if (!inp || typeof inp !== 'object' || Array.isArray(inp)) return null;
+  const num = (v, def) => {
+    const n = typeof v === 'number' ? v : Number(v);
+    return Number.isFinite(n) ? n : def;
+  };
+  // yawは向きにしか使わないので0〜2πに丸める（回し続けても値が発散しない）
+  const yaw = ((num(inp.yaw, 0) % TAU) + TAU) % TAU;
+  return {
+    yaw,
+    pitch: clamp(num(inp.pitch, 0), -1.55, 1.55),
+    up: !!inp.up, down: !!inp.down, left: !!inp.left, right: !!inp.right,
+    jump: !!inp.jump, throw: !!inp.throw, catch: !!inp.catch, crouch: !!inp.crouch,
+  };
+}
+
+// プレイヤー名の検証（クライアントの入力欄は12文字までだが、サーバー側でも必ず制限する）
+function cleanName(n, fallback) {
+  if (typeof n !== 'string') return fallback;
+  const t = n.replace(/[\r\n\t]+/g, ' ').trim().slice(0, 12);
+  return t || fallback;
+}
+
 function startQueueMatch(q) {
   if (q.timer) { clearTimeout(q.timer); q.timer = null; q.timerStart = null; }
   if (q.list.length === 0) return;
@@ -1116,7 +1144,17 @@ wss.on('connection', (ws) => {
   ws.on('message', (raw) => {
     let msg;
     try { msg = JSON.parse(raw); } catch { return; }
+    if (!msg || typeof msg !== 'object') return;
 
+    // 1通の不正なパケットでプロセスごと落ちる（＝進行中の全試合が切断される）のを防ぐ
+    try {
+      handleMessage(ws, msg);
+    } catch (e) {
+      console.error('message handler error:', msg && msg.type, e && e.message);
+    }
+  });
+
+  function handleMessage(ws, msg) {
     switch (msg.type) {
       case 'create_room': {
         const key = genKey();
@@ -1124,7 +1162,7 @@ wss.on('connection', (ws) => {
         rooms.set(key, ws._room);
         ws._room.hostWs = ws;
         ws._slot = ws._room.assignSlot(ws);
-        ws._room.clients.set(ws, { slot: ws._slot, name: msg.name || 'Host', skin: cleanSkin(msg.skin) });
+        ws._room.clients.set(ws, { slot: ws._slot, name: cleanName(msg.name, 'Host'), skin: cleanSkin(msg.skin) });
         ws._room.sendTo(ws, {
           type: 'room_created', key, slot: ws._slot, isHost: true,
           players: ws._room.getSlotList()
@@ -1133,19 +1171,20 @@ wss.on('connection', (ws) => {
       }
 
       case 'join_room': {
-        const r = rooms.get(msg.key);
+        const r = typeof msg.key === 'string' ? rooms.get(msg.key) : null;
         if (!r) { ws.send(JSON.stringify({ type: 'error', message: 'ルームが見つかりません' })); return; }
         if (r.clients.size >= 16) { ws.send(JSON.stringify({ type: 'error', message: 'ルームが満員です (最大16人)' })); return; }
         if (r.lobbyState === 'playing') { ws.send(JSON.stringify({ type: 'error', message: 'ゲーム中です' })); return; }
         ws._room = r;
         ws._slot = ws._room.assignSlot(ws);
-        ws._room.clients.set(ws, { slot: ws._slot, name: msg.name || 'Player', skin: cleanSkin(msg.skin) });
+        const joinName = cleanName(msg.name, 'Player');
+        ws._room.clients.set(ws, { slot: ws._slot, name: joinName, skin: cleanSkin(msg.skin) });
         ws._room.sendTo(ws, {
           type: 'room_joined', key: msg.key, slot: ws._slot, isHost: false,
           players: ws._room.getSlotList()
         });
         ws._room.broadcast({
-          type: 'player_joined', slot: ws._slot, name: msg.name || 'Player',
+          type: 'player_joined', slot: ws._slot, name: joinName,
           players: ws._room.getSlotList()
         }, ws);
         break;
@@ -1160,17 +1199,18 @@ wss.on('connection', (ws) => {
 
       case 'input': {
         const room = ws._room;
-        if (room && (room.gameState === 'playing' || room.gameState === 'countdown')) {
-          // throw/catch/jumpはワンショット入力。次のtickまでに後続パケットで
-          // 上書きされると消えるため、tickで消費されるまで保持する
-          const prev = room.inputs[ws._slot];
-          if (prev) {
-            msg.input.throw = msg.input.throw || prev.throw;
-            msg.input.catch = msg.input.catch || prev.catch;
-            msg.input.jump = msg.input.jump || prev.jump;
-          }
-          room.inputs[ws._slot] = msg.input;
+        if (!room || (room.gameState !== 'playing' && room.gameState !== 'countdown')) break;
+        const input = cleanInput(msg.input);
+        if (!input) break; // 中身が無い/型が違う入力は捨てる
+        // throw/catch/jumpはワンショット入力。次のtickまでに後続パケットで
+        // 上書きされると消えるため、tickで消費されるまで保持する
+        const prev = room.inputs[ws._slot];
+        if (prev) {
+          input.throw = input.throw || prev.throw;
+          input.catch = input.catch || prev.catch;
+          input.jump = input.jump || prev.jump;
         }
+        room.inputs[ws._slot] = input;
         break;
       }
 
@@ -1182,7 +1222,7 @@ wss.on('connection', (ws) => {
       }
 
       case 'matchmake': {
-        addToQueue(msg.ranked ? 'ranked' : 'casual', ws, msg.name || 'Player', cleanSkin(msg.skin));
+        addToQueue(msg.ranked ? 'ranked' : 'casual', ws, cleanName(msg.name, 'Player'), cleanSkin(msg.skin));
         break;
       }
 
@@ -1191,7 +1231,7 @@ wss.on('connection', (ws) => {
         break;
       }
     }
-  });
+  }
 
   ws.on('close', () => {
     if (ws._queueType) removeFromAnyQueue(ws);
@@ -1217,6 +1257,15 @@ wss.on('connection', (ws) => {
       ws._room.sendTo(newHost, { type: 'become_host', slot: info.slot });
     }
   });
+});
+
+// 最後の保険。想定外の例外でプロセスが落ちると進行中の全試合が切断されるため、
+// ログを残して動き続ける（個別の処理は上のtry/catchで既に隔離している）
+process.on('uncaughtException', (e) => {
+  console.error('uncaughtException:', e && e.stack || e);
+});
+process.on('unhandledRejection', (e) => {
+  console.error('unhandledRejection:', e && e.stack || e);
 });
 
 server.listen(PORT, () => {

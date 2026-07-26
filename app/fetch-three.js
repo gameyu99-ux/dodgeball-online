@@ -1,18 +1,44 @@
-// Three.js r128 をダウンロードして www/ にバンドルする（初回のみ実行）
+// 外部ライブラリ(Three.js / Firebase)をダウンロードして www/ にバンドルする
+// アプリ版では起動時に一切ネットワークを必要としないようにするため、CDN参照を全てローカル化する
+// （CDNのままだと通信が遅い/届かない環境で index.html のパースが止まり、ボタンが無反応になる）
 const https = require('https');
 const fs = require('fs');
 const path = require('path');
 
-const URL = 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js';
-const OUT = path.join(__dirname, 'www', 'three.min.js');
+const WWW = path.join(__dirname, 'www');
+const FB = 'https://www.gstatic.com/firebasejs/10.14.1/';
 
-fs.mkdirSync(path.dirname(OUT), { recursive: true });
-https.get(URL, res => {
-  if (res.statusCode !== 200) { console.error('HTTP', res.statusCode); process.exit(1); }
-  const ws = fs.createWriteStream(OUT);
-  res.pipe(ws);
-  ws.on('finish', () => {
-    const kb = Math.round(fs.statSync(OUT).size / 1024);
-    console.log(`three.min.js downloaded (${kb} KB)`);
+const LIBS = [
+  { url: 'https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js', out: 'three.min.js' },
+  { url: FB + 'firebase-app-compat.js',       out: 'firebase-app-compat.js' },
+  { url: FB + 'firebase-auth-compat.js',      out: 'firebase-auth-compat.js' },
+  { url: FB + 'firebase-firestore-compat.js', out: 'firebase-firestore-compat.js' },
+];
+
+function download(url, dest, redirects = 0) {
+  return new Promise((resolve, reject) => {
+    https.get(url, res => {
+      // gstaticはリダイレクトを返すことがある
+      if ([301, 302, 303, 307, 308].includes(res.statusCode) && res.headers.location) {
+        if (redirects > 4) return reject(new Error('too many redirects: ' + url));
+        res.resume();
+        return download(res.headers.location, dest, redirects + 1).then(resolve, reject);
+      }
+      if (res.statusCode !== 200) return reject(new Error(`HTTP ${res.statusCode} for ${url}`));
+      const ws = fs.createWriteStream(dest);
+      res.pipe(ws);
+      ws.on('finish', () => resolve(Math.round(fs.statSync(dest).size / 1024)));
+      ws.on('error', reject);
+    }).on('error', reject);
   });
-}).on('error', e => { console.error(e.message); process.exit(1); });
+}
+
+(async () => {
+  fs.mkdirSync(WWW, { recursive: true });
+  for (const lib of LIBS) {
+    const dest = path.join(WWW, lib.out);
+    const kb = await download(lib.url, dest);
+    console.log(`${lib.out} downloaded (${kb} KB)`);
+  }
+  console.log('all libraries bundled');
+})().catch(e => { console.error(e.message); process.exit(1); });

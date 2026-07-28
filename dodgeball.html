@@ -160,6 +160,8 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 .skin-btn.equip{background:linear-gradient(135deg,#3498db,#2980b9)}
 .skin-btn.equipped-label{background:#1e8449;cursor:default}
 #coin-gain{color:#ffd700;font-weight:bold;font-size:18px;margin-bottom:14px;display:none}
+#btn-reward-double{padding:11px 22px;font-size:15px;font-weight:bold;background:linear-gradient(135deg,#f1c40f,#e67e22);color:#000;border:none;border-radius:10px;cursor:pointer;margin-bottom:14px}
+#btn-reward-double:disabled{background:#555;color:#999;cursor:default}
 @media (pointer:coarse) and (max-width:768px){
   .team-score{font-size:13px;padding:6px 10px}
   #timer{font-size:13px;padding:3px 10px}
@@ -214,6 +216,8 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
 /* 広告バナー枠: ネイティブ広告はWebViewの上に別レイヤーで重なるため、
    このスペースを空けておかないとUIと重なってしまう */
 .ad-banner-slot{width:320px;max-width:92vw;height:50px;background:rgba(255,255,255,.05);border:1px dashed rgba(255,255,255,.2);border-radius:6px;margin:6px auto;display:flex;align-items:center;justify-content:center;font-size:11px;color:rgba(255,255,255,.3);flex-shrink:0}
+/* 実際のネイティブバナーが乗っている間はプレースホルダの見た目を消し、透明な余白だけにする */
+.ad-banner-slot.ad-live{background:transparent;border-color:transparent}
 #conn-status{position:fixed;top:4px;right:10px;color:#fff;font-size:11px;padding:3px 10px;border-radius:8px;pointer-events:none;z-index:112;display:none;background:rgba(0,0,0,.6)}
 .mode-online{background:linear-gradient(135deg,#e67e22,#d35400)}
 #matchmaking{position:fixed;inset:0;background:url('bg.jpg') center/cover no-repeat;display:none;flex-direction:column;align-items:center;justify-content:center;z-index:100;color:#fff}
@@ -525,6 +529,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   <div id="gacha-bar">
     <button id="btn-gacha1">🎰 ガチャを回す <span class="gacha-cost">🪙200</span></button>
     <button id="btn-gacha10">🎰 10連ガチャ <span class="gacha-cost">🪙1800</span></button>
+    <button id="btn-gacha-free" style="display:none">📺 広告で1回無料</button>
     <span id="gacha-rates">SR 5%｜R 25%｜N 70%（ダブりはコインに変換）</span>
   </div>
   <div id="locker-main">
@@ -557,6 +562,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
   <div id="match-countdown"></div>
   <div class="match-dots"><span></span><span></span><span></span></div>
   <button class="mp-btn mp-btn-back" id="btn-match-cancel">キャンセル</button>
+  <div id="ad-slot-matchmaking" class="ad-banner-slot">広告</div>
 </div>
 
 <div id="conn-status"></div>
@@ -570,6 +576,7 @@ body{overflow:hidden;background:#000;font-family:'Segoe UI','Hiragino Sans',sans
     <div id="rank-after"></div>
   </div>
   <p id="coin-gain"></p>
+  <button id="btn-reward-double" style="display:none">📺 広告を見てコイン2倍</button>
   <div class="result-btns">
     <button id="retry-btn">もう一回</button>
     <button id="home-btn">ホームに戻る</button>
@@ -2042,6 +2049,136 @@ async function confirmDeleteAccount() {
   }
 }
 
+/* ══════════════════════════════════════════
+   広告 (AdMob) — アプリ版のみ。動作確認が済むまではGoogle公式のテスト広告IDを使う。
+   実配信前にAD_TESTをfalse、AD_UNITSを自分のAdMobコンソールで発行した実IDに差し替えること
+   ══════════════════════════════════════════ */
+const AD_TEST = true;
+const AD_UNITS = {
+  banner: 'ca-app-pub-3940256099942544/2934735716',
+  interstitial: 'ca-app-pub-3940256099942544/4411468910',
+  rewarded: 'ca-app-pub-3940256099942544/1712485313',
+};
+function AdMobPlugin() {
+  return (IS_APP && window.Capacitor && window.Capacitor.Plugins && window.Capacitor.Plugins.AdMob) || null;
+}
+let _adsReady = false;
+let _interstitialLoaded = false;
+let _skipNextInterstitial = false; // リワード広告を見た直後は次のインタースティシャルを1回だけ見送る
+let _bannerVisible = false;
+
+async function initAds() {
+  const AdMob = AdMobPlugin();
+  if (!AdMob) return;
+  try {
+    await AdMob.initialize({
+      initializeForTesting: AD_TEST,
+      maxAdContentRating: 'General',
+      tagForChildDirectedTreatment: false,
+      tagForUnderAgeOfConsent: false,
+    });
+    _adsReady = true;
+    loadInterstitial();
+  } catch (e) { console.warn('AdMob init failed:', e); }
+}
+
+/* ── インタースティシャル（3試合ごと。初回とリワード広告視聴直後はスキップ）── */
+function loadInterstitial() {
+  const AdMob = AdMobPlugin();
+  if (!AdMob || !_adsReady) return;
+  _interstitialLoaded = false;
+  AdMob.prepareInterstitial({ adId: AD_UNITS.interstitial, isTesting: AD_TEST })
+    .then(() => { _interstitialLoaded = true; })
+    .catch(() => { _interstitialLoaded = false; });
+}
+
+function maybeShowInterstitial() {
+  const AdMob = AdMobPlugin();
+  const n = (parseInt(localStorage.getItem('db_ad_matches') || '0', 10) + 1);
+  localStorage.setItem('db_ad_matches', String(n));
+  if (!AdMob || !_adsReady) return;
+  if (n <= 1 || n % 3 !== 0) return; // 初回、および3試合の節目でない間はスキップフラグを消費せず温存する
+  if (_skipNextInterstitial) { _skipNextInterstitial = false; return; } // 直前に報酬広告を見ていたら今回だけ見送る
+  if (!_interstitialLoaded) return; // 試合体験を止めないため未ロード時は諦める
+  _interstitialLoaded = false;
+  AdMob.showInterstitial().catch(() => {}).finally(loadInterstitial);
+}
+
+/* ── リワード広告（結果画面のコイン2倍・ガチャ無料1回）── */
+// onReward: 実際に最後まで視聴して報酬が確定した時だけ呼ばれる。
+// AdMobRewardedのイベントを正とする（showRewardVideoAd自体の解決タイミングは実装依存のため）
+async function showRewardAd(onReward, onUnavailable) {
+  const AdMob = AdMobPlugin();
+  if (!AdMob || !_adsReady) { if (onUnavailable) onUnavailable(); return; }
+  let rewarded = false;
+  const sub = await AdMob.addListener('onRewardedVideoAdReward', () => { rewarded = true; });
+  try {
+    await AdMob.prepareRewardVideoAd({ adId: AD_UNITS.rewarded, isTesting: AD_TEST });
+    await AdMob.showRewardVideoAd();
+  } catch (e) {
+    sub.remove();
+    if (onUnavailable) onUnavailable();
+    return;
+  }
+  sub.remove();
+  if (rewarded) {
+    _skipNextInterstitial = true;
+    if (onReward) onReward();
+  } else if (onUnavailable) {
+    onUnavailable();
+  }
+}
+
+/* ── バナー広告（マッチメイキング待機・ともだちロビー）── */
+async function showBannerAd(slotElId) {
+  const AdMob = AdMobPlugin();
+  const slot = document.getElementById(slotElId);
+  if (!AdMob || !_adsReady) return;
+  if (slot) slot.classList.add('ad-live');
+  try {
+    await AdMob.showBanner({ adId: AD_UNITS.banner, adSize: 'ADAPTIVE_BANNER', position: 'BOTTOM_CENTER', isTesting: AD_TEST });
+    _bannerVisible = true;
+  } catch (e) { console.warn('banner failed:', e); }
+}
+async function hideBannerAd(slotElId) {
+  const AdMob = AdMobPlugin();
+  const slot = document.getElementById(slotElId);
+  if (slot) slot.classList.remove('ad-live');
+  if (!AdMob || !_bannerVisible) return;
+  _bannerVisible = false;
+  try { await AdMob.removeBanner(); } catch (e) {}
+}
+
+// 結果画面: 「広告を見てコイン2倍」ボタンの表示制御。ソロは即確定、マルチ/オンラインは
+// game_end_statsの到着後に呼ばれる。毎試合同じ場所・同じ見た目で提示する
+let _lastCoinGain = 0, _rewardClaimed = false;
+function offerCoinDoubleReward(gain) {
+  _lastCoinGain = gain; _rewardClaimed = false;
+  const btn = document.getElementById('btn-reward-double');
+  btn.style.display = (IS_APP && gain > 0) ? 'block' : 'none';
+  btn.disabled = false;
+  btn.textContent = '📺 広告を見てコイン2倍';
+}
+document.getElementById('btn-reward-double').addEventListener('click', () => {
+  if (_rewardClaimed || _lastCoinGain <= 0) return;
+  const btn = document.getElementById('btn-reward-double');
+  btn.disabled = true;
+  btn.textContent = '読み込み中…';
+  showRewardAd(
+    () => {
+      _rewardClaimed = true;
+      addCoins(_lastCoinGain);
+      const cg = document.getElementById('coin-gain');
+      cg.textContent = `🪙 +${_lastCoinGain * 2} コイン（広告で2倍！）`;
+      btn.textContent = '✓ コイン2倍を獲得しました';
+    },
+    () => {
+      btn.disabled = false;
+      btn.textContent = '📺 広告を見てコイン2倍';
+    }
+  );
+});
+
 /* ── コスメ（部位別スキン）& コイン ── */
 // 4カテゴリ: head(頭のアクセサリ) / body(胴のアクセント色) /
 // throwfx(投げたボールのトレイル色) / hitfx(命中エフェクト色)。
@@ -2206,8 +2343,8 @@ function rollGachaOnce() {
   return { ...pick, isNew };
 }
 
-function doGacha(count) {
-  const cost = count === 10 ? GACHA10_COST : GACHA_COST;
+function doGacha(count, free = false) {
+  const cost = free ? 0 : (count === 10 ? GACHA10_COST : GACHA_COST);
   if (_coins < cost) return null;
   _coins -= cost;
   const results = [];
@@ -2360,16 +2497,25 @@ function renderLocker() {
 }
 
 /* ── ガチャUI ── */
+function todayKey() {
+  const d = new Date();
+  return `${d.getFullYear()}-${d.getMonth()+1}-${d.getDate()}`;
+}
+function canFreeGacha() {
+  return IS_APP && localStorage.getItem('db_gacha_free_date') !== todayKey();
+}
 function updateGachaButtons() {
   const b1 = document.getElementById('btn-gacha1');
   const b10 = document.getElementById('btn-gacha10');
+  const bf = document.getElementById('btn-gacha-free');
   if (!b1) return;
   b1.disabled = _coins < GACHA_COST;
   b10.disabled = _coins < GACHA10_COST;
+  if (bf) bf.style.display = canFreeGacha() ? 'inline-block' : 'none';
 }
 
-function runGacha(count) {
-  const results = doGacha(count);
+function runGacha(count, free = false) {
+  const results = doGacha(count, free);
   if (!results) return;
   if (results.some(r => r.rarity === 'SR')) sfx.win(); else sfx.catch();
   const list = document.getElementById('gacha-results');
@@ -2515,6 +2661,24 @@ const game = {
     });
     document.getElementById('btn-gacha1').addEventListener('click', () => runGacha(1));
     document.getElementById('btn-gacha10').addEventListener('click', () => runGacha(10));
+    document.getElementById('btn-gacha-free').addEventListener('click', () => {
+      if (!canFreeGacha()) return;
+      const btn = document.getElementById('btn-gacha-free');
+      btn.disabled = true;
+      btn.textContent = '読み込み中…';
+      showRewardAd(
+        () => {
+          localStorage.setItem('db_gacha_free_date', todayKey());
+          runGacha(1, true);
+          btn.disabled = false;
+          btn.textContent = '📺 広告で1回無料';
+        },
+        () => {
+          btn.disabled = false;
+          btn.textContent = '📺 広告で1回無料';
+        }
+      );
+    });
     document.getElementById('btn-gacha-close').addEventListener('click', () => {
       document.getElementById('gacha-modal').classList.remove('show');
     });
@@ -2540,6 +2704,7 @@ const game = {
       document.getElementById('match-count').textContent = '0 / 16';
       document.getElementById('match-countdown').textContent = '';
       document.getElementById('match-status').textContent = '対戦相手を探しています...';
+      showBannerAd('ad-slot-matchmaking');
       net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: true, skin: _cosEquipped }); });
     });
     document.getElementById('btn-casual').addEventListener('click', () => {
@@ -2550,6 +2715,7 @@ const game = {
       document.getElementById('match-count').textContent = '0 / 16';
       document.getElementById('match-countdown').textContent = '';
       document.getElementById('match-status').textContent = '対戦相手を探しています...';
+      showBannerAd('ad-slot-matchmaking');
       net.connect(() => { net.send({ type: 'matchmake', name: settings.name || 'Player', ranked: false, skin: _cosEquipped }); });
     });
     document.getElementById('btn-online-back').addEventListener('click', () => {
@@ -2559,6 +2725,7 @@ const game = {
     document.getElementById('btn-match-cancel').addEventListener('click', () => {
       net.send({ type: 'cancel_match' });
       net.disconnect();
+      hideBannerAd('ad-slot-matchmaking');
       document.getElementById('matchmaking').style.display = 'none';
       document.getElementById('menu').style.display = 'flex';
     });
@@ -2581,6 +2748,7 @@ const game = {
     });
     document.getElementById('btn-lobby-back').addEventListener('click', () => {
       net.disconnect();
+      hideBannerAd('ad-slot-lobby');
       document.getElementById('lobby').style.display = 'none';
       document.getElementById('mp-menu').style.display = 'flex';
     });
@@ -2590,6 +2758,7 @@ const game = {
       }
     });
     document.getElementById('retry-btn').addEventListener('click', () => {
+      maybeShowInterstitial();
       if (this.mode === 'multi' || this.mode === 'online') {
         net.disconnect();
         document.getElementById('result').style.display = 'none';
@@ -2600,6 +2769,7 @@ const game = {
     });
 
     document.getElementById('home-btn').addEventListener('click', () => {
+      maybeShowInterstitial();
       if (this.mode === 'multi' || this.mode === 'online') net.disconnect();
 
       document.getElementById('result').style.display = 'none';
@@ -2679,6 +2849,8 @@ const game = {
   },
 
   startMultiplayerGame(mySlot, humanSlots) {
+    hideBannerAd('ad-slot-lobby');
+    hideBannerAd('ad-slot-matchmaking');
     document.getElementById('lobby').style.display = 'none';
     document.getElementById('menu').style.display = 'none';
     document.getElementById('mp-menu').style.display = 'none';
@@ -3259,11 +3431,13 @@ const game = {
     document.getElementById('pause-btn').style.display = 'none';
     // コイン獲得（ソロはここで確定。マルチ/オンラインはgame_end_statsで付与）
     const cg = document.getElementById('coin-gain');
+    document.getElementById('btn-reward-double').style.display = 'none'; // 到着まで隠す
     if (this.mode === 'solo') {
       const gain = (won ? 40 : 10) + (this.hitCount || 0) * 5;
       addCoins(gain);
       cg.textContent = `🪙 +${gain} コイン`;
       cg.style.display = 'block';
+      offerCoinDoubleReward(gain);
     } else {
       cg.style.display = 'none';
     }
@@ -3703,6 +3877,7 @@ const net = {
       this.connected = false;
       this.stopIntervals();
       if (document.getElementById('matchmaking').style.display === 'flex') {
+        hideBannerAd('ad-slot-matchmaking');
         document.getElementById('matchmaking').style.display = 'none';
         document.getElementById('menu').style.display = 'flex';
       }
@@ -3829,6 +4004,7 @@ const net = {
           const cg = document.getElementById('coin-gain');
           cg.textContent = `🪙 +${gain} コイン`;
           cg.style.display = 'block';
+          offerCoinDoubleReward(gain);
         }
         if (msg.ranked) {
           const oldRP = getRankRP();
@@ -3913,6 +4089,7 @@ function showLobby(key, isHost, playerList) {
   document.getElementById('lobby-room-key').textContent = key;
   document.getElementById('btn-start-mp').style.display = isHost ? 'block' : 'none';
   updateLobbyPlayers(playerList);
+  showBannerAd('ad-slot-lobby');
 }
 
 function updateLobbyPlayers(playerList) {
@@ -3961,6 +4138,7 @@ function updateLobbyPlayers(playerList) {
 }
 
 game.init();
+initAds(); // アプリ版のみ動作。Web版・AdMob未読込では即return
 updateAuthUI(); // Firebase読み込み前にログインUIを未ログイン状態で整える（アプリではGoogleボタンを隠す）
 // Firebaseはdefer読み込みなのでパース完了後に初期化する（読み込み失敗時もゲームは動く）
 if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', initFirebase);
